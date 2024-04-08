@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import timm
 
 from typing import Tuple
@@ -39,7 +40,6 @@ class KeypointHeatmapModel(pl.LightningModule):
         else:
             self.model = KeypointHeatmap(cfg.backbone, cfg.num_keypoints)
         self.cfg = cfg
-        self.criterion = nn.MSELoss()
         self.metrics = {
             "precision": 0,
             "recall": 0,
@@ -56,7 +56,7 @@ class KeypointHeatmapModel(pl.LightningModule):
         images = batch["image"]
         heatmaps = batch["heatmaps"]
         outputs = self.model(images)
-        loss = self.criterion(outputs, heatmaps)
+        loss = F.mse_loss(outputs, heatmaps)
         if batch_idx % self.cfg.log_batch_interval == 0:
             self.log("train_loss", loss)
         return loss
@@ -67,7 +67,7 @@ class KeypointHeatmapModel(pl.LightningModule):
         heatmaps = batch["heatmaps"]
         keypoints = batch["keypoints"]
         outputs = self.model(images)
-        loss = self.criterion(outputs, heatmaps)
+        loss = F.mse_loss(outputs, heatmaps)
         for output, keypoint in zip(outputs, keypoints):
             preds = heatmap_to_preds(output, img_size=self.cfg.train_size)
             metrics.append(get_metrics(preds, keypoint))
@@ -80,7 +80,10 @@ class KeypointHeatmapModel(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         for key in self.metrics:
-            self.metrics[key] /= len(outputs)
+            if key not in ["tp", "fp", "fn", "tn", "wrong"]:
+                self.metrics[key] /= len(outputs)
+
+        print(self.metrics)
         self.log_dict(self.metrics)
         self.metrics = {
             "precision": 0,
@@ -98,7 +101,12 @@ class KeypointHeatmapModel(pl.LightningModule):
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay, betas=self.cfg.betas
         )
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "train_loss",
+        }
 
 
 class KeypointRegressorModel(pl.LightningModule):
@@ -107,16 +115,15 @@ class KeypointRegressorModel(pl.LightningModule):
         super().__init__()
         self.model = KeypointRegressor(cfg.backbone, cfg.num_keypoints)
         self.cfg = cfg
-        self.criterion = nn.MSELoss()
         self.metrics = {
-            "Precision": 0,
-            "Recall": 0,
+            "precision": 0,
+            "recall": 0,
             "avg_distance": 0,
             "accuracy": 0,
-            "true_positive": 0,
-            "false_positive": 0,
-            "false_negative": 0,
-            "true_negative": 0,
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 0,
             "wrong": 0,
         }
 
@@ -125,41 +132,53 @@ class KeypointRegressorModel(pl.LightningModule):
         keypoints = batch["normalized_keypoints"]
         keypoints = keypoints.view(-1, 57 * 2)
         outputs = self.model(images)
-        loss = self.criterion(outputs, keypoints)
+        loss = F.mse_loss(outputs, keypoints)
         if batch_idx % self.cfg.log_batch_interval == 0:
             self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
+        metrics = []
         images = batch["image"]
         keypoints = batch["normalized_keypoints"]
         keypoints = keypoints.view(-1, 57 * 2)
         outputs = self.model(images)
-        loss = self.criterion(outputs, keypoints)
-        metrics = get_metrics(outputs, keypoints)
-        for key, value in metrics.items():
-            self.metrics[key] += value
+        loss = F.mse_loss(outputs, keypoints)
+        for output, keypoint in zip(outputs, keypoints):
+            metrics.append(get_metrics(output, keypoint))
+
+        for metric in metrics:
+            for key, value in metric.items():
+                self.metrics[key] += value
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay, betas=self.cfg.betas
         )
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "train_loss",
+        }
 
     def validation_epoch_end(self, outputs):
         for key in self.metrics:
-            self.metrics[key] /= len(outputs)
+            if key not in ["tp", "fp", "fn", "tn", "wrong"]:
+                self.metrics[key] /= len(outputs)
+
+        print(self.metrics)
         self.log_dict(self.metrics)
         self.metrics = {
-            "Precision": 0,
-            "Recall": 0,
+            "precision": 0,
+            "recall": 0,
             "avg_distance": 0,
             "accuracy": 0,
-            "true_positive": 0,
-            "false_positive": 0,
-            "false_negative": 0,
-            "true_negative": 0,
+            "tp": 0,
+            "fp": 0,
+            "fn": 0,
+            "tn": 0,
             "wrong": 0,
         }
 

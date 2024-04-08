@@ -21,6 +21,7 @@ from typing import List, Optional
 
 IMAGENET_URL = "https://optgaw.dm.files.1drv.com/y4mWNpya38VArcDInoPaL7GfPMgcop92G6YRkabO1QTSWkCbo7djk8BFZ6LK_KHHIYE8wqeSAChU58NVFOZEvqFaoz392OgcyBrq_f8XGkusQep_oQsuQ7DPQCUrdLwyze_NlsyDGWot0L9agkQ-M_SfNr10ETlCF5R7BdKDZdupmcMXZc-IE3Ysw1bVHdOH4l-XEbEKFAi6ivPUbeqlYkRMQ"
 
+
 @dataclass
 class StageConfig:
     NUM_MODULES: int
@@ -376,7 +377,6 @@ class KeypointHRNet(nn.Module):
         num_blocks = layer_config["NUM_BLOCKS"]
         num_channels = layer_config["NUM_CHANNELS"]
         block = blocks_dict[layer_config["BLOCK"]]
-        fuse_method = layer_config["FUSE_METHOD"]
 
         modules = []
         for i in range(num_modules):

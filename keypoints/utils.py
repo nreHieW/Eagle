@@ -57,6 +57,8 @@ def l2_distance(point1, point2):
 
 @torch.no_grad()
 def get_metrics(preds, targets, dist_threshold: float = 0.01, confidence_threshold: float = 50):
+    preds = preds.cpu().numpy()
+    targets = targets.cpu().numpy()
     preds = preds.reshape(57, -1)
     targets = targets.reshape(57, 2)
     out = []
