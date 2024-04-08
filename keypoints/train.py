@@ -29,6 +29,8 @@ def get_config() -> Config:
     parser.add_argument("--pred_size", type=int, nargs=2, default=(135, 240))
     parser.add_argument("--torch_dtype", type=str, default="bf16")
     parser.add_argument("--sigma", type=int, default=3)
+    parser.add_argument("--pretrained", action="store_true")
+    parser.add_argument("--heatmap", action="store_true")
 
     args = parser.parse_args()
     return Config(**vars(args))
@@ -83,7 +85,7 @@ def main():
     if cfg.torch_dtype == "bf16":
         lightning_dtype = "bf16"
     elif cfg.torch_dtype == "fp32":
-        lightning_dtype = "full"
+        lightning_dtype = 32
     elif cfg.torch_dtype == "fp16":
         lightning_dtype = 16
     trainer = pl.Trainer(gpus=1, max_epochs=cfg.num_epochs, precision=lightning_dtype)

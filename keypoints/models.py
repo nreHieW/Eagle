@@ -8,8 +8,8 @@ import pytorch_lightning as pl
 from utils import Config, get_metrics
 
 
-def get_model(cfg: Config, heatmap: bool = True):
-    if heatmap:
+def get_model(cfg: Config):
+    if cfg.heatmap:
         return KeypointHeatmapModel(cfg)
     else:
         return KeypointRegressorModel(cfg)
@@ -33,7 +33,9 @@ class KeypointHeatmapModel(pl.LightningModule):
     def __init__(self, cfg: Config):
         super().__init__()
         if cfg.backbone == "hrnet":
-            self.model = get_hrnet_model(cfg.train_size, cfg.pred_size, num_classes=cfg.num_keypoints)
+            self.model = get_hrnet_model(
+                cfg.train_size, cfg.pred_size, num_classes=cfg.num_keypoints, pretrained=cfg.pretrained
+            )
         else:
             self.model = KeypointHeatmap(cfg.backbone, cfg.num_keypoints)
         self.cfg = cfg

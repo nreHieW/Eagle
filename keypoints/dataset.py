@@ -88,8 +88,8 @@ class KeypointsDataset(Dataset):
         """
         h, w = self.pred_size
         device = keypoints.device
-        x = keypoints[:, 0]
-        y = keypoints[:, 1]
+        x = keypoints[:, 0] / self.width * w
+        y = keypoints[:, 1] / self.height * h
 
         x_range = torch.arange(0, w, device=device, dtype=torch.float32)
         y_range = torch.arange(0, h, device=device, dtype=torch.float32)

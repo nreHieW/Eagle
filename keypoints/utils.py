@@ -23,6 +23,8 @@ class Config:
     pred_size: Tuple[int, int] = (135, 240)  # 540, 960
     torch_dtype: str = "bf16"
     sigma: int = 3
+    pretrained: bool = True
+    heatmap: bool = False
 
 
 def show_normalized_keypoints(item, verbose: bool = True):
