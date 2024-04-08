@@ -1,0 +1,12 @@
+albumentations==1.4.2
+datasets==2.8.0
+matplotlib==3.6.2
+mplsoccer==1.2.4
+numpy==1.26.4
+opencv_python_headless==4.9.0.80
+pytorch_lightning==1.8.6
+PyYAML==6.0.1
+timm==0.6.12
+torch==1.13.1
+tqdm==4.64.1
+ultralytics==8.1.44
