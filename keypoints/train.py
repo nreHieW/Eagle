@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 import cv2
 
-from utils import Config
+from utils import Config, get_collate_fn
 from dataset import KeypointsDataset
 from models import get_model
 
@@ -34,6 +34,21 @@ def get_config() -> Config:
 
     args = parser.parse_args()
     return Config(**vars(args))
+
+
+def test_architecture(model, cfg):
+    model.train()
+    for name, param in model.named_parameters():
+        assert param.requires_grad, f"{name} requires grad is False"
+
+    x = torch.randn(2, 3, cfg.train_size[0], cfg.train_size[1])
+    y = model(x)
+    loss = y.mean()
+    loss.backward()
+    for name, param in model.named_parameters():
+        assert param.grad is not None, f"{name} grad is None"
+
+    model.zero_grad()
 
 
 def main():
@@ -78,10 +93,23 @@ def main():
         hr_flip=0.5,
         sigma=cfg.sigma,
     )
-    train_loader = DataLoader(train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
-    valid_loader = DataLoader(valid_dataset, batch_size=cfg.val_batch_size, shuffle=False, num_workers=cfg.num_workers)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+        collate_fn=get_collate_fn(cfg),
+    )
+    valid_loader = DataLoader(
+        valid_dataset,
+        batch_size=cfg.val_batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+        collate_fn=get_collate_fn(cfg),
+    )
 
     model = get_model(cfg)
+    test_architecture(model.model, cfg)
     if cfg.torch_dtype == "bf16":
         lightning_dtype = "bf16"
     elif cfg.torch_dtype == "fp32":

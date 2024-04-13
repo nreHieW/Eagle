@@ -12,7 +12,7 @@ class Config:
     num_keypoints: int = 57
     batch_size: int = 8
     val_batch_size: int = 32
-    num_workers: int = 1
+    num_workers: int = 2
     lr: float = 0.0001
     num_epochs: int = 10
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -25,6 +25,17 @@ class Config:
     sigma: int = 3
     pretrained: bool = True
     heatmap: bool = False
+
+
+def get_collate_fn(cfg):
+    if cfg.backbone == "rcnn":
+        return identity_collate
+    else:
+        return torch.utils.data._utils.collate.default_collate
+
+
+def identity_collate(batch):
+    return batch
 
 
 def show_normalized_keypoints(item, verbose: bool = True):
@@ -56,11 +67,13 @@ def l2_distance(point1, point2):
 
 
 @torch.no_grad()
-def get_metrics(preds, targets, dist_threshold: float = 0.01, confidence_threshold: float = 50):
+def get_metrics(
+    preds, targets, dist_threshold: float = 0.01, confidence_threshold: float = 50, num_keypoints: int = 57
+):
     preds = preds.cpu().numpy()
     targets = targets.cpu().numpy()
-    preds = preds.reshape(57, -1)
-    targets = targets.reshape(57, 2)
+    preds = preds.reshape(num_keypoints, -1)
+    targets = targets.reshape(num_keypoints, 2)
     out = []
     dists = []
 

@@ -431,7 +431,7 @@ class KeypointHRNet(nn.Module):
                     x_list.append(self.transition3[i](y_list[-1]))
             else:
                 x_list.append(y_list[i])
-        x = self.stage4(x_list)
+        y_list = self.stage4(x_list)
 
         x = self.final_layer(y_list[0])
 

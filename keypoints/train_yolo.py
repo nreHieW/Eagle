@@ -3,8 +3,8 @@ import os
 import yaml
 from tqdm import tqdm
 from ultralytics import YOLO
+import math
 
-dataset = load_dataset("nreHieW/SoccerNet_Field_Segmentation")
 
 INTERSECTION_TO_PITCH_POINTS = {
     0: "L_GOAL_TL_POST",
@@ -85,8 +85,6 @@ for split in dataset.keys():
         item = ds[idx]
         img = item["image"]
         width, height = img.size
-        box_width = 1 / width
-        box_height = 1 / height
         img.save(f"images/{split}/{idx}.jpg")
         keypoints = item["keypoints"]
 
@@ -96,12 +94,8 @@ for split in dataset.keys():
             if (curr is not None) and not any(math.isnan(x) for x in curr):
                 x = curr[0] / width
                 y = curr[1] / height
-                box_width = (
-                    min(box_width, 1 - x) if x + box_width / 2 > 1 else box_width
-                )
-                box_height = (
-                    min(box_height, 1 - y) if y + box_height / 2 > 1 else box_height
-                )
+                box_width = 0.005
+                box_height = 0.005
                 label_str += f"{class_idx} {x} {y} {box_width} {box_height}\n"
 
         label_str = label_str.strip("\n")
@@ -109,7 +103,7 @@ for split in dataset.keys():
             f.write(label_str)
 
 cfg = {
-    "path": "/content",
+    "path": ".",
     "train": "images/train",
     "val": "images/val",
     "test": "images/test",
@@ -121,7 +115,7 @@ with open("config.yml", "w") as f:
 
 
 # Load a model
-model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
+model = YOLO("yolov8m.pt")  # load a pretrained model (recommended for training)
 
 # Train the model
-results = model.train(data="config.yml", epochs=1, imgsz=640)
+results = model.train(data="config.yml", epochs=200, imgsz=640)
