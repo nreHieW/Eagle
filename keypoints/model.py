@@ -12,10 +12,11 @@ from heatmap import (
     get_keypoints_from_heatmap_batch_maxpool,
 )
 from visualization import (
-    get_logging_label_from_channel_configuration,
     visualize_predicted_heatmaps,
     visualize_predicted_keypoints,
 )
+
+from utils import WarmupCosineDecayScheduler
 
 
 class KeypointDetector(pl.LightningModule):
@@ -32,6 +33,7 @@ class KeypointDetector(pl.LightningModule):
         maximal_gt_keypoint_pixel_distances: str,
         minimal_keypoint_extraction_pixel_distance: int,
         learning_rate: float,
+        num_steps: int,
         backbone,
         keypoint_channel_configuration: List[List[str]],
         ap_epoch_start: int,
@@ -50,6 +52,7 @@ class KeypointDetector(pl.LightningModule):
         super().__init__()
 
         self.learning_rate = learning_rate
+        self.num_steps = num_steps
         self.heatmap_sigma = heatmap_sigma
         self.ap_epoch_start = ap_epoch_start
         self.ap_epoch_freq = ap_epoch_freq
@@ -104,11 +107,47 @@ class KeypointDetector(pl.LightningModule):
         return self.unnormalized_model(x)
 
     def configure_optimizers(self):
-        """
-        Configures an Adam optimizer.
-        """
-        self.optimizer = torch.optim.AdamW(self.parameters(), self.learning_rate)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=0.5, patience=5)
+        # https://github.com/karpathy/deep-vector-quantization/blob/main/dvq/vqvae.py
+        # separate out all parameters to those that will and won't experience regularizing weight decay
+        decay = set()
+        no_decay = set()
+        whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv2d, torch.nn.ConvTranspose2d)
+        blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.BatchNorm2d, torch.nn.Embedding)
+        for mn, m in self.named_modules():
+            for pn, p in m.named_parameters():
+                fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
+
+                if pn.endswith("bias"):
+                    # all biases will not be decayed
+                    no_decay.add(fpn)
+                elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
+                    # weights of whitelist modules will be weight decayed
+                    decay.add(fpn)
+                elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
+                    # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+
+        # validate that we considered every parameter
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        inter_params = decay & no_decay
+        union_params = decay | no_decay
+        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        assert len(param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
+
+        # create the pytorch optimizer object
+        optim_groups = [
+            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": 1e-4},
+            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
+        ]
+        optimizer = torch.optim.AdamW(optim_groups, lr=self.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-4)
+        self.optimizer = optimizer
+        self.scheduler = WarmupCosineDecayScheduler(
+            optimizer,
+            warmup_iters=0.01 * self.num_steps,
+            num_iterations=self.num_steps,
+            learning_rate=self.learning_rate,
+            decay_frac=0.1,
+        )
         return {
             "optimizer": self.optimizer,
             "lr_scheduler": self.scheduler,

@@ -56,7 +56,7 @@ def get_logging_label_from_channel_configuration(channel_configuration: List[Lis
     return label
 
 
-def overlay_image_with_heatmap(images: torch.Tensor, heatmaps: torch.Tensor, alpha=0.5) -> torch.Tensor:
+def overlay_image_with_heatmap(images: torch.Tensor, heatmaps: torch.Tensor, alpha=0.25) -> torch.Tensor:
     """ """
     viridis = cm.get_cmap("viridis")
     heatmaps = viridis(heatmaps.numpy())[..., :3]  # viridis: grayscale -> RGBa

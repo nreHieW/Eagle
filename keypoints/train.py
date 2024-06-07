@@ -53,10 +53,12 @@ def main():
     train_dataset = KeypointsDataset(
         "train[:1%]",
         transform=train_transform,
+        use_calibrated=cfg.use_calibrated,
     )
     valid_dataset = KeypointsDataset(
         "val[:1%]",
         transform=valid_transform,
+        use_calibrated=cfg.use_calibrated,
     )
     train_loader = DataLoader(
         train_dataset,
@@ -73,11 +75,13 @@ def main():
         collate_fn=KeypointsDataset.collate_fn,
     )
     backbone = get_hrnet_model(True)
+    num_steps = len(train_loader) * cfg.num_epochs
     model = KeypointDetector(
         heatmap_sigma=cfg.heatmap_sigma,
         maximal_gt_keypoint_pixel_distances="2 4",
         minimal_keypoint_extraction_pixel_distance=1,
         learning_rate=cfg.lr,
+        num_steps=num_steps,
         backbone=backbone,
         keypoint_channel_configuration=[[str(x)] for x in range(57)],  # every keypoint is a separate channel
         ap_epoch_start=1,
@@ -91,9 +95,9 @@ def main():
     )
     early_stopping = RelativeEarlyStopping(
         monitor="validation/epoch_loss",
-        patience=5,
+        patience=int(0.125 * cfg.num_epochs),
         min_relative_delta=0.01,
-        verbose=True,
+        # verbose=True,
         mode="min",
     )
     trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping])

@@ -3,6 +3,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import torch
 from dataclasses import dataclass
 from argparse import ArgumentParser
+import math
 
 
 class RelativeEarlyStopping(EarlyStopping):
@@ -60,6 +61,7 @@ class Config:
     num_epochs: int = 200
     batch_size: int = 16
     heatmap_sigma: int = 3
+    use_calibrated: bool = False
 
 
 def get_config() -> Config:
@@ -71,5 +73,31 @@ def get_config() -> Config:
     parser.add_argument("--precision", type=str, default="bf16-mixed")
     parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--heatmap_sigma", type=int, default=3)
+    parser.add_argument("--use_calibrated", action="store_true")
     args = parser.parse_args()
     return Config(**vars(args))
+
+
+class WarmupCosineDecayScheduler:
+    def __init__(self, optimizer, warmup_iters, num_iterations, learning_rate, decay_frac):
+        self.optimizer = optimizer
+        self.warmup_iters = warmup_iters
+        self.num_iterations = num_iterations
+        self.learning_rate = learning_rate
+        self.decay_frac = decay_frac
+        self.min_lr = self.learning_rate * self.decay_frac
+
+    def get_lr(self, it):
+        if it < self.warmup_iters:
+            return self.learning_rate * (it + 1) / self.warmup_iters
+        if it > self.num_iterations:
+            return self.min_lr
+        decay_ratio = (it - self.warmup_iters) / (self.num_iterations - self.warmup_iters)
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+        return self.min_lr + coeff * (self.learning_rate - self.min_lr)
+
+    def step(self, it):
+        lr = self.get_lr(it)
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = lr
