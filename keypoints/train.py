@@ -33,7 +33,7 @@ def main():
     cfg = get_config()
     train_transform = A.Compose(
         [
-            A.RandomResizedCrop(size=(540, 960), scale=(0.8, 1), p=0.5),
+            A.RandomResizedCrop(540, 960, scale=(0.8, 1), p=0.5),
             A.Downscale(scale_min=0.35, scale_max=0.9, p=0.5, interpolation=cv2.INTER_LINEAR),
             A.GaussNoise(p=0.7),
             A.MotionBlur(p=0.4),
@@ -74,10 +74,10 @@ def main():
     )
     backbone = get_hrnet_model(True)
     model = KeypointDetector(
-        heatmap_sigma=3,
+        heatmap_sigma=cfg.heatmap_sigma,
         maximal_gt_keypoint_pixel_distances="2 4",
         minimal_keypoint_extraction_pixel_distance=1,
-        learning_rate=3e-4,
+        learning_rate=cfg.lr,
         backbone=backbone,
         keypoint_channel_configuration=[[str(x)] for x in range(57)],  # every keypoint is a separate channel
         ap_epoch_start=1,
@@ -89,7 +89,14 @@ def main():
         name=cfg.run_name,
         project=cfg.project_name,
     )
-    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[RelativeEarlyStopping(patience=10)])
+    early_stopping = RelativeEarlyStopping(
+        monitor="validation/epoch_loss",
+        patience=5,
+        min_relative_delta=0.01,
+        verbose=True,
+        mode="min",
+    )
+    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping])
     trainer.fit(model, train_loader, valid_loader)
 
     torch.save(model.state_dict(), "keypoints.pth")

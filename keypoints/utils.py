@@ -52,13 +52,14 @@ class RelativeEarlyStopping(EarlyStopping):
 
 @dataclass
 class Config:
+    run_name: str
+    project_name: str
     seed: int = 1337
     lr: float = 3e-4
     precision: str = "bf16-mixed"
     num_epochs: int = 200
     batch_size: int = 16
-    run_name: str
-    project_name: str
+    heatmap_sigma: int = 3
 
 
 def get_config() -> Config:
