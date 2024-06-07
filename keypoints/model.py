@@ -185,7 +185,7 @@ class KeypointDetector(pl.LightningModule):
 
         ## predict and compute losses
         predicted_unnormalized_maps = self.forward_unnormalized(input_images)
-        predicted_heatmaps = torch.sigmoid(predicted_unnormalized_maps)
+        predicted_heatmaps = torch.sigmoid(predicted_unnormalized_maps).float()
         channel_losses = []
         channel_gt_losses = []
 

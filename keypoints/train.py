@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 import cv2
 import wandb
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import LearningRateMonitor
 
 from dataset import KeypointsDataset
 from model import KeypointDetector
@@ -100,7 +101,7 @@ def main():
         # verbose=True,
         mode="min",
     )
-    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping])
+    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping, LearningRateMonitor(logging_interval="epoch")])
     trainer.fit(model, train_loader, valid_loader)
 
     torch.save(model.state_dict(), "keypoints.pth")

@@ -4,6 +4,7 @@ import torch
 from dataclasses import dataclass
 from argparse import ArgumentParser
 import math
+from torch.optim.lr_scheduler import _LRScheduler
 
 
 class RelativeEarlyStopping(EarlyStopping):
@@ -79,25 +80,21 @@ def get_config() -> Config:
     return Config(**vars(args))
 
 
-class WarmupCosineDecayScheduler:
-    def __init__(self, optimizer, warmup_iters, num_iterations, learning_rate, decay_frac):
-        self.optimizer = optimizer
+class WarmupCosineDecayScheduler(_LRScheduler):
+    def __init__(self, optimizer, warmup_iters, num_iterations, learning_rate, decay_frac, last_epoch=-1):
         self.warmup_iters = warmup_iters
         self.num_iterations = num_iterations
         self.learning_rate = learning_rate
         self.decay_frac = decay_frac
         self.min_lr = self.learning_rate * self.decay_frac
+        super(WarmupCosineDecayScheduler, self).__init__(optimizer, last_epoch)
 
-    def get_lr(self, it):
+    def get_lr(self):
+        it = self.last_epoch
         if it < self.warmup_iters:
-            return self.learning_rate * (it + 1) / self.warmup_iters
+            return [self.learning_rate * (it + 1) / self.warmup_iters for _ in self.optimizer.param_groups]
         if it > self.num_iterations:
-            return self.min_lr
+            return [self.min_lr for _ in self.optimizer.param_groups]
         decay_ratio = (it - self.warmup_iters) / (self.num_iterations - self.warmup_iters)
         coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
-        return self.min_lr + coeff * (self.learning_rate - self.min_lr)
-
-    def step(self, it):
-        lr = self.get_lr(it)
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = lr
+        return [self.min_lr + coeff * (self.learning_rate - self.min_lr) for _ in self.optimizer.param_groups]
