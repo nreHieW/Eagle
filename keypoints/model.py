@@ -36,9 +36,7 @@ class KeypointDetector(pl.LightningModule):
         keypoint_channel_configuration: List[List[str]],
         ap_epoch_start: int,
         ap_epoch_freq: int,
-        lr_scheduler_relative_threshold: float,
         max_keypoints: int,
-        **kwargs,
     ):
         """[summary]
 
@@ -56,7 +54,6 @@ class KeypointDetector(pl.LightningModule):
         self.ap_epoch_start = ap_epoch_start
         self.ap_epoch_freq = ap_epoch_freq
         self.minimal_keypoint_pixel_distance = minimal_keypoint_extraction_pixel_distance
-        self.lr_scheduler_relative_threshold = lr_scheduler_relative_threshold
         self.max_keypoints = max_keypoints
         self.keypoint_channel_configuration = keypoint_channel_configuration
         # parse the gt pixel distances
@@ -110,7 +107,7 @@ class KeypointDetector(pl.LightningModule):
         """
         Configures an Adam optimizer.
         """
-        self.optimizer = torch.optim.Adam(self.parameters(), self.learning_rate)
+        self.optimizer = torch.optim.AdamW(self.parameters(), self.learning_rate)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=0.5, patience=5)
         return {
             "optimizer": self.optimizer,
