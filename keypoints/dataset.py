@@ -1,6 +1,7 @@
 from datasets import load_dataset
 import albumentations as A
 
+
 from torch.utils.data import Dataset
 import torch
 import numpy as np
@@ -16,23 +17,17 @@ class KeypointsDataset(Dataset):
         split: str,
         transform=None,
         img_size=(540, 960),
-        pred_size=(540, 960),
-        sigma=3,
-        hr_flip: float = 0.0,
+        pred_size=(135, 240),
         use_calibrated: bool = False,
         num_keypoints: int = 57,
-        is_rcnn: bool = False,
     ):
         self.dataset = load_dataset("nreHieW/SoccerNet_Field_Keypoints", split=split, cache_dir="data")
         self.transform = transform
         self.pred_size = pred_size
-        self.sigma = sigma
         self.height, self.width = img_size
         self.image_size = img_size
-        self.hr_flip = hr_flip
         self.kp_name = "calibrated_keypoints" if use_calibrated else "keypoints"
         self.num_keypoints = num_keypoints
-        self.is_rcnn = is_rcnn
 
     def __len__(self):
         return len(self.dataset)
@@ -43,166 +38,87 @@ class KeypointsDataset(Dataset):
         image = np.array(image)
         keypoints = sample[self.kp_name][: self.num_keypoints]
 
-        if self.hr_flip > 0 and random.random() < self.hr_flip:
-            # Horizontal flip
-            image, keypoints = self.horizontal_flip(image, keypoints)
         present_class_labels = [i for i, kp in enumerate(keypoints) if kp is not None]
-        present_keypoints = torch.stack([torch.tensor(x) for x in keypoints if x is not None])
+        present_keypoints = [kp for kp in keypoints if kp is not None]
 
         if self.transform:
-            transformed = self.transform(image=image, keypoints=present_keypoints, class_labels=present_class_labels)
+            transformed = self.transform(
+                image=image,
+                keypoints=present_keypoints,
+                class_labels=present_class_labels,
+            )
             image = transformed["image"]
-            transformed_keypoints = torch.tensor(transformed["keypoints"])
+            transformed_keypoints = [kp for kp in transformed["keypoints"]]
             visible_labels = transformed["class_labels"]
-            keypoints = torch.full((self.num_keypoints, 2), -1.0)
-            keypoints[visible_labels] = transformed_keypoints
+            keypoints = [([] if i not in visible_labels else transformed_keypoints[visible_labels.index(i)]) for i in range(self.num_keypoints)]
         else:
-            keypoints = torch.full((self.num_keypoints, 2), -1.0)
-            keypoints[present_class_labels] = transformed_keypoints
+            keypoints = [([] if i not in present_class_labels else present_keypoints[present_class_labels.index(i)]) for i in range(self.num_keypoints)]
 
-        mask = (keypoints != -1).all(-1).int()
-        keypoints = (keypoints + 1) * mask.unsqueeze(-1) - 1
-        heatmaps = self.create_heatmaps(keypoints) * mask.unsqueeze(-1).unsqueeze(-1)
-        normalized_keypoints = keypoints / torch.tensor([self.width, self.height])
-        normalized_keypoints = torch.where(normalized_keypoints == 0, torch.tensor(-1), normalized_keypoints)
-        if self.is_rcnn:
-            inv_mask = 1 - mask
-            x_min = torch.min(keypoints[:, 0])
-            y_min = torch.min(keypoints[:, 1])
-            x_max = torch.max(keypoints[:, 0])
-            y_max = torch.max(keypoints[:, 1])
-            return {
-                "image": image,
-                "keypoints": torch.cat([keypoints, inv_mask.unsqueeze(-1)], dim=-1),
-                "normalized_keypoints": torch.cat([normalized_keypoints, inv_mask.unsqueeze(-1)], dim=-1),
-                "boxes": torch.tensor([[x_min, y_min, x_max, y_max]]),
-                "mask": mask,
-                "labels": torch.tensor([1]),
-            }
-        else:
-            return {
-                "image": image,
-                "keypoints": keypoints,
-                "normalized_keypoints": normalized_keypoints,
-                "heatmaps": heatmaps,
-                "mask": mask,
-                "test": self._generate_target(keypoints) * mask.unsqueeze(-1).unsqueeze(-1),
-            }
+        return image, [[x] if len(x) > 0 else [] for x in keypoints]  # force each keypoint to be a separate channel
 
-    # https://github.com/NikolasEnt/soccernet-calibration-sportlight/blob/8255f5044bc7f2ef4f77e9c1dc67cf0861045290/src/models/hrnet/loss.py
-    def gaussian(self, x, mu: torch.Tensor, sigma: float) -> torch.Tensor:
-        return torch.exp(-(torch.div(x - mu.unsqueeze(-1), sigma) ** 2) / 2.0)
+    @staticmethod
+    def collate_fn(data):
+        """custom collate function for use with the torch dataloader
 
-    def create_heatmaps(self, keypoints: torch.Tensor) -> torch.Tensor:
-        """Create Gaussian distribution heatmaps for keypoints.
-
-        Each heatmap is drawn on an individual channel.
+        Note that it could have been more efficient to padd for each channel separately, but it's not worth the trouble as even
+        for 100 channels with each 100 occurances the padded data size is still < 1kB..
 
         Args:
-            keypoints (torch.Tensor): An array of N points, each point is (x, y).
-                Expected shape: (N, 2).
+            data: list of tuples (image, keypoints); image = 3xHxW tensor; keypoints = List(c x list(? keypoints ))
 
         Returns:
-            torch.Tensor: Resulted Gaussian heatmaps: (N, H, W).
+            (images, keypoints); Images as a torch tensor Nx3xHxW,
+            keypoints is a nested list of lists. where each item is a tensor (K,2) with K the number of keypoints
+            for that channel and that sample:
+
+                List(List(Tensor(K,2))) -> C x N x Tensor(max_keypoints_for_any_channel_in_batch x 2)
+
+        Note there is no padding, as all values need to be unpacked again in the detector to create all the heatmaps,
+        unlike e.g. NLP where you directly feed the padded sequences to the network.
         """
-        h, w = self.pred_size
-        device = keypoints.device
-        x = keypoints[:, 0] / self.width * w
-        y = keypoints[:, 1] / self.height * h
+        images, keypoints = zip(*data)
+        # convert the list of keypoints to a 2D tensor
+        keypoints = [[torch.tensor(x) for x in y] for y in keypoints]
+        # reorder to have the different keypoint channels as  first dimension
+        # C x N x K x 2 , K = variable number of keypoints for each (N,C)
+        reordered_keypoints = [[keypoints[i][j] for i in range(len(keypoints))] for j in range(len(keypoints[0]))]
 
-        x_range = torch.arange(0, w, device=device, dtype=torch.float32)
-        y_range = torch.arange(0, h, device=device, dtype=torch.float32)
-        gauss_x = self.gaussian(x_range, x, self.sigma)
-        gauss_y = self.gaussian(y_range, y, self.sigma)
-        heatmaps = torch.einsum("NW, NH -> NHW", gauss_x, gauss_y)
+        images = torch.stack(images)
 
-        return heatmaps
+        return images, reordered_keypoints
 
-    def _generate_target(self, keypoints):
-        target = np.zeros((self.num_keypoints, self.pred_size[0], self.pred_size[1]), dtype=np.float32)
 
-        tmp_size = self.sigma * 3
+if __name__ == "__main__":
+    from albumentations.pytorch import ToTensorV2
+    from torch.utils.data import DataLoader
 
-        for cls_id in range(self.num_keypoints):
-            curr = keypoints[cls_id]
-            # curr_x, curr_y = curr
-            # curr = [curr_x / self.width * self.pred_size[1], curr_y / self.height * self.pred_size[0]]
-            feat_stride = np.asarray(self.image_size) / np.asarray(self.pred_size)
-            mu_x = int(curr[0] / feat_stride[0] + 0.5)
-            mu_y = int(curr[1] / feat_stride[1] + 0.5)
-            # Check that any part of the gaussian is in-bounds
-            ul = [int(mu_x - tmp_size), int(mu_y - tmp_size)]
-            br = [int(mu_x + tmp_size + 1), int(mu_y + tmp_size + 1)]
+    train_transform = A.Compose(
+        [
+            A.Normalize(),
+            ToTensorV2(),
+        ],
+        keypoint_params=A.KeypointParams(format="xy", remove_invisible=False),
+    )
 
-            # # Generate gaussian
-            size = 2 * tmp_size + 1
-            x = np.arange(0, size, 1, np.float32)
-            y = x[:, np.newaxis]
-            x0 = y0 = size // 2
-            # The gaussian is not normalized, we want the center value to equal 1
-            g = np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / (2 * self.sigma**2))
+    train_dataset = KeypointsDataset(
+        "train[:1%]",
+        transform=train_transform,
+    )
+    print(len(train_dataset))
 
-            # Usable gaussian range
-            g_x = max(0, -ul[0]), min(br[0], self.pred_size[1]) - ul[0]
-            g_y = max(0, -ul[1]), min(br[1], self.pred_size[0]) - ul[1]
-            # Image range
-            img_x = max(0, ul[0]), min(br[0], self.pred_size[1])
-            img_y = max(0, ul[1]), min(br[1], self.pred_size[0])
-            target[cls_id][img_y[0] : img_y[1], img_x[0] : img_x[1]] = g[g_y[0] : g_y[1], g_x[0] : g_x[1]]
-
-        return torch.tensor(target)
-
-    def horizontal_flip(self, image, keypoints):
-        image = cv2.flip(image, 1)
-
-        flipped_keypoints = [None] * len(keypoints)
-        behind_goal = self.is_behind_goal(keypoints)
-        if behind_goal:
-            mapping_fn = self.map_behind_goal
-        else:
-            mapping_fn = self.map_side
-        for i, point in enumerate(keypoints):
-            if point is None:
-                continue
-            old_class = INTERSECTION_TO_PITCH_POINTS[i]
-            new_class = mapping_fn(old_class)
-            flipped_keypoints[PITCH_POINTS_TO_INTERSECTION[new_class]] = [self.width - point[0], point[1]]
-        return image, flipped_keypoints
-
-    def map_side(self, input_point):
-        mapping = {"TL": "TR", "TR": "TL", "BL": "BR", "BR": "BL", "L": "R", "R": "L", "LEFT": "RIGHT", "RIGHT": "LEFT"}
-        return "_".join(mapping.get(part, part) for part in input_point.split("_"))
-
-    def map_behind_goal(self, input_point):
-        mapping = {
-            "T": "B",
-            "B": "T",
-            "TL": "BL" if "POST" not in input_point else "TR",
-            "BL": "TL" if "POST" not in input_point else "BR",
-            "TR": "BR" if "POST" not in input_point else "TL",
-            "BR": "TR" if "POST" not in input_point else "BL",
-        }
-
-        return "_".join(
-            [
-                mapping.get(part, part)
-                for part in input_point.split("_")
-                if "PENALTY_MARK" not in input_point or part not in mapping
-            ]
-        )
-
-    def is_behind_goal(self, keypoints):
-        n_total = 0
-        n_horizontal = 0
-        for p1_idx, p2_idx in PERP_LINES:
-            if keypoints[p1_idx] is not None and keypoints[p2_idx] is not None:
-                n_total += 1
-
-                p1 = keypoints[p1_idx]
-                p2 = keypoints[p2_idx]
-                dx = abs(p2[0] - p1[0])
-                dy = abs(p2[1] - p1[1])
-
-                if dy < 1.0 or dx / dy > 10:
-                    n_horizontal += 1
-        return n_horizontal > 0 and n_horizontal / n_total > 0.5
+    item = train_dataset[0]
+    image, keypoints = item
+    print(keypoints)
+    print("\n\nDataloader\n\n")
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=1,
+        num_workers=2,
+        collate_fn=KeypointsDataset.collate_fn,
+    )
+    for i, (images, keypoints) in enumerate(train_loader):
+        # print(images.shape)
+        # print(keypoints)
+        # print(keypoints[0])
+        # print(keypoints[0].shape)
+        break
