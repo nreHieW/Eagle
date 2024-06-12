@@ -1,18 +1,39 @@
 from ultralytics import YOLO
 import cv2
+import torch
 import numpy as np
 from ..utils.pitch import GROUND_TRUTH_POINTS, INTERSECTION_TO_PITCH_POINTS
 from tqdm import tqdm
+from .keypoint_hrnet import KeypointModel
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import os
+from boxmot import DeepOCSORT
+from pathlib import Path
 
 
 class CoordinateModel:
 
     def __init__(self):
         # TODO: Support GPU inference
-        self.keypoint_model = YOLO("eagle/models/weights/keypoint_detector.onnx", task="pose", verbose=False)
-        self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)
+        # self.keypoint_model = YOLO("eagle/models/weights/keypoint_detector.onnx", task="pose", verbose=False)
+        # self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)
+        self.detector_model = YOLO("eagle/models/weights/detector_medium.pt").to("mps")
+        self.keypoint_model = KeypointModel(57).to("mps")
+        self.keypoint_model.load_state_dict(torch.load("eagle/models/weights/keypoints_main.pth"))
+        self.keypoint_model.eval()
         self.class_names = {0: "Player", 1: "Goalkeeper", 2: "Ball", 3: "Referee", 4: "Staff members"}
+        self.transforms = A.Compose(  # Define the transformations for the keypoint model
+            [A.Resize(540, 960), A.Normalize(), ToTensorV2()],
+        )
         self.lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+        self.tracker = DeepOCSORT(
+            model_weights=Path("osnet_x0_25_msmt17.pt"),
+            device="mps",
+            fp16=False,
+        )
+        # print(os.environ["PYTORCH_ENABLE_MPS_FALLBACK"])
 
     def get_coordinates(self, frames: np.ndarray, fps: int, num_homography: int = 1, num_keypoint_detection: int = 1, verbose: bool = True):
         """
@@ -23,7 +44,12 @@ class CoordinateModel:
         :param num_keypoint_detection: Number of times per second to detect keypoints using the model
         :param verbose: Whether to show the progress bar
 
-        :return: dictionary containing the image coordinates of players, goalkeepers and the ball. The index is the frame number
+        :return: dictionary containing the image coordinates of players, goalkeepers and the ball. The index is the frame number,
+        The second level has 3 keys:
+        - "Coordinates": Nested dictionary where the first level keys are the Class Names (Player, Goalkeeper, Ball),
+        Second level keys are the ids, Second level values are the Bounding Boxes, Confidence and Bottom Center
+        - "Time": Time since the start of the video in the format MM:SS
+        - "Keypoints": dictionary containing the calibrated keypoints where the key is the pitch point (str) and the value is the image coordinates (useful for plotting)
         """
         homography_interval = int(fps / num_homography)
         keypoint_interval = int(fps / num_keypoint_detection)
@@ -94,14 +120,19 @@ class CoordinateModel:
                 else:
                     compute_homography = True  # For this frame, use the previous homography matrix but compute a new one next frame
 
-            indiv = {}
-            for label, coords in objects.items():
-                if len(coords) > 0:
-                    coords = np.array([coords], dtype=np.float32)
+            indiv = {}  # Coordinate information at this current frame
+            for class_name, class_dict in objects.items():
+                for obj_id, obj_dict in class_dict.items():
+                    bottom_center = obj_dict["Bottom_center"]
+                    bbox_coords = obj_dict["BBox"]
+                    conf = obj_dict["Confidence"]
+                    coords = np.array([[bottom_center]], dtype=np.float32)  # Dim needs to be 3
                     transformed_coords = cv2.perspectiveTransform(coords, homography_matrix)[0]
-                    indiv[label] = transformed_coords.tolist()
-                else:
-                    indiv[label] = []
+                    curr = {int(obj_id): {"BBox": bbox_coords, "Confidence": conf, "Transformed_Coordinates": transformed_coords.tolist()}}
+                    if class_name not in indiv:
+                        indiv[class_name] = curr
+                    else:
+                        indiv[class_name].update(curr)
 
             res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints}
         return res
@@ -156,22 +187,27 @@ class CoordinateModel:
 
         return filtered_keypoints
 
+    @torch.no_grad()
     def detect_keypoints(self, frame: np.ndarray):
         """
         Detect keypoints and returns the homography matrix
-        :param frame: Input frame read using CV2 in BGR format
+        :param frame: Input frame read using CV2 in BGR format. Shape = (H, W, C)
 
         :return: dictionary containing the calibrated keypoints where the key is the pitch point (str) and the value is the image coordinates
         """
-        keypoint_pred = self.keypoint_model(frame, verbose=False)
-        keypoints = keypoint_pred[0].keypoints
-        conf = keypoints.conf[0]
-        points = keypoints.xy[0].cpu().numpy()
-        valid_indices = conf >= 0.5
-        valid_points = points[valid_indices].astype(int)
-        valid_keys = [INTERSECTION_TO_PITCH_POINTS[i] for i, valid in enumerate(valid_indices) if valid]
+        # BGR to RGB
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        height, width, _ = frame.shape
+        frame = self.transforms(image=frame)["image"].to(self.keypoint_model.unnormalized_model[1].weight.data.device).float().unsqueeze(0)
+        keypoints = self.keypoint_model.get_keypoints(frame)[0]
+        res = {}
+        for i, x, y, score in keypoints:
+            if score < 0.5:
+                continue
+            label = INTERSECTION_TO_PITCH_POINTS[i]
+            res[label] = (int(x * width), int(y * height))
 
-        return dict(zip(valid_keys, valid_points))
+        return res
 
     def calibrate_keypoints(self, frame: np.ndarray, keypoints: dict):
         """
@@ -182,7 +218,7 @@ class CoordinateModel:
 
         :return: dictionary containing the calibrated keypoints where the key is the pitch point (str) and the value is the image coordinates
         """
-        OFFSET = 7
+        OFFSET = 3  # Define the offset for the grid
         BRIGHTNESS_THRESHOLD = 150  # Define a threshold for brightness to decide if adjustment is needed
         new_keypoints = {}
 
@@ -206,25 +242,32 @@ class CoordinateModel:
 
         return new_keypoints
 
+    @torch.no_grad()
     def detect_objects(self, frame: np.ndarray):
         """
         Detect objects in the frame and return the bounding boxes
         :param frame: Input frame read using CV2 in BGR format
 
-        :return: dictionary containing the image coordinates of players, goalkeepers and the ball
+        :return: Nested Dictionary where the first level keys are the Class Names
+        Second level keys are the ids
+        Second level values are the Bounding Boxes, Confidence and Bottom Center
         """
         detector_pred = self.detector_model(frame, verbose=False, conf=0.1)
         boxes = detector_pred[0].boxes
-        coords = boxes.xyxy
-        conf = boxes.conf
-        class_labels = boxes.cls
-        res = {"Player": [], "Goalkeeper": [], "Ball": []}
-        for i, box in enumerate(coords):
-            if conf[i] < 0.5:
+        coords = boxes.xyxy.cpu().numpy()
+        conf = boxes.conf.cpu().numpy()
+        class_labels = boxes.cls.cpu().numpy()
+        tracks = self.tracker.update(np.hstack((coords, conf.reshape(-1, 1), class_labels.reshape(-1, 1))), frame)
+        res = {"Player": {}, "Goalkeeper": {}, "Ball": {}}
+        for track_item in tracks:
+            x1, y1, x2, y2, id, conf, class_idx, idx = track_item
+            label_str = self.class_names[class_idx]
+            if label_str not in res:  # Ignore staff members and referees
                 continue
-            x1, y1, x2, y2 = box.cpu().numpy().astype(int)
-            label = class_labels[i].item()
-            label = self.class_names[int(label)]
-            if label in res:
-                res[label].append(((x1 + x2) // 2, y2))  # Bottom center
+            res[label_str][id] = {
+                "BBox": [x1, y1, x2, y2],
+                "Confidence": conf,
+                "Bottom_center": [int((x1 + x2) / 2), y2],
+            }
+
         return res
