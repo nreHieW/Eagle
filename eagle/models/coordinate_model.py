@@ -18,14 +18,27 @@ PITCH_WIDTH = 105
 PITCH_HEIGHT = 68
 
 
+def get_device():
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = "mps"
+    return device
+
+
 class CoordinateModel:
 
     def __init__(self):
-        # TODO: Support GPU inference
-        # self.keypoint_model = YOLO("eagle/models/weights/keypoint_detector.onnx", task="pose", verbose=False)
-        # self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)
-        self.detector_model = YOLO("eagle/models/weights/detector_large.pt").to("mps")
-        self.keypoint_model = KeypointModel(57).to("mps")
+        device = get_device()
+        self.device = device
+        print(f"Using {self.device} for inference")
+
+        if device == "cpu":
+            self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)  # by default uses the medium model for cpu
+        else:
+            self.detector_model = YOLO("eagle/models/weights/detector_large.pt").to(device)
+        self.keypoint_model = KeypointModel(57).to(device)
         self.keypoint_model.load_state_dict(torch.load("eagle/models/weights/keypoints_main.pth"))
         self.keypoint_model.eval()
         self.class_names = {0: "Player", 1: "Goalkeeper", 2: "Ball", 3: "Referee", 4: "Staff members"}
@@ -33,13 +46,11 @@ class CoordinateModel:
             [A.Resize(540, 960), A.Normalize(), ToTensorV2()],
         )
         self.lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
         self.tracker = DeepOCSORT(
             model_weights=Path("osnet_x0_25_msmt17.pt"),
-            device="mps",
+            device=self.device,
             fp16=False,
         )
-        # print(os.environ["PYTORCH_ENABLE_MPS_FALLBACK"])
 
     def get_coordinates(self, frames: np.ndarray, fps: int, num_homography: int = 1, num_keypoint_detection: int = 1, verbose: bool = True, calibration: bool = False) -> dict:
         """

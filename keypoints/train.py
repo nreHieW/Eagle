@@ -8,6 +8,7 @@ import cv2
 import wandb
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 from dataset import KeypointsDataset
 from model import KeypointDetector
@@ -32,6 +33,7 @@ def test_architecture(model, cfg):
 
 def main():
     cfg = get_config()
+    pl.seed_everything(cfg.seed)
     train_transform = A.Compose(
         [
             A.RandomResizedCrop(540, 960, scale=(0.8, 1), p=0.5),
@@ -40,7 +42,7 @@ def main():
             A.MotionBlur(p=0.4),
             A.RandomBrightnessContrast(contrast_limit=0.3, brightness_limit=0.2, p=0.5),
             A.ColorJitter(p=0.4),
-            A.Normalize(),
+            A.Normalize(mean=(0, 0, 0), std=(1, 1, 1)),
             ToTensorV2(),
         ],
         keypoint_params=A.KeypointParams(format="xy", remove_invisible=False),
@@ -101,8 +103,19 @@ def main():
         # verbose=True,
         mode="min",
     )
-    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping, LearningRateMonitor(logging_interval="epoch")])
-    trainer.fit(model, train_loader, valid_loader)
+    checkpoint_callback = ModelCheckpoint(
+        monitor="validation/epoch_loss",
+        dirpath="checkpoints",
+        filename="best",
+        save_top_k=1,
+        mode="min",
+    )
+    trainer = pl.Trainer(max_epochs=cfg.num_epochs, precision=cfg.precision, logger=WandbLogger(), callbacks=[early_stopping, LearningRateMonitor(logging_interval="epoch"), checkpoint_callback])
+    try:
+        trainer.fit(model, train_loader, valid_loader)
+    except KeyboardInterrupt:
+        print("Training interrupted, saving model")
+        torch.save(model.state_dict(), "keypoints.pth")
 
     torch.save(model.state_dict(), "keypoints.pth")
 

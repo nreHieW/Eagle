@@ -161,3 +161,9 @@ cython_debug/
 
 **/data/
 *.ipynb
+*.pt
+*.mp4
+*.onnx
+*.pth
+weights/
+output/

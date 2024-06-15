@@ -8,6 +8,7 @@ import json
 from argparse import ArgumentParser
 import pandas as pd
 import cv2
+import numpy as np
 
 
 def main():
@@ -49,22 +50,26 @@ def main():
 
             if "Ball" in col:
                 color = (0, 255, 0)
-                cv2.circle(curr_frame, (int(x), int(y)), 10, color, 1)
+                bottom_point = (int(x), int(y) - 20)
+                top_left = (int(x) - 5, int(y) - 30)
+                top_right = (int(x) + 5, int(y) - 30)
+                pts = np.array([bottom_point, top_left, top_right]).reshape(-1, 1, 2)
+                cv2.drawContours(curr_frame, [pts], 0, color, -1)
             else:
                 id = int(col.split("_")[1])
                 if "Goalkeeper" in col:
                     color = (0, 255, 0)
                 else:
-
-                    if str(id) not in team_mapping:
+                    if id not in team_mapping:
                         continue
-                    team = team_mapping[str(id)]
+                    team = team_mapping[id]
                     if team == 0:
                         color = (0, 0, 255)
                     else:
                         color = (255, 0, 0)
-                cv2.circle(curr_frame, (int(x), int(y)), 10, color, 1)
-                cv2.putText(curr_frame, str(id), (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+                cv2.ellipse(curr_frame, (int(x), int(y)), (25, 10), 0, -45, 235, color, 1)
+                cv2.putText(curr_frame, str(id), (int(x) - 3, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         out.append(curr_frame)
 

@@ -3,5 +3,5 @@ datasets
 matplotlib==3.6.2
 numpy==1.26.4
 Pillow==10.3.0
-pytorch_lightning==2.2.5
-wandb==0.17.1
+torch
+gdown

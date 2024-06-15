@@ -1,4 +1,4 @@
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 import albumentations as A
 
 
@@ -21,7 +21,12 @@ class KeypointsDataset(Dataset):
         use_calibrated: bool = False,
         num_keypoints: int = 57,
     ):
-        self.dataset = load_dataset("nreHieW/SoccerNet_Field_Keypoints", split=split, cache_dir="data")
+        if split == "full":
+            train_dataset = load_dataset("nreHieW/SoccerNet_Field_Keypoints", split="train", cache_dir="data")
+            val_dataset = load_dataset("nreHieW/SoccerNet_Field_Keypoints", split="val", cache_dir="data")
+            self.dataset = concatenate_datasets([train_dataset, val_dataset])
+        else:
+            self.dataset = load_dataset("nreHieW/SoccerNet_Field_Keypoints", split=split, cache_dir="data")
         self.transform = transform
         self.pred_size = pred_size
         self.height, self.width = img_size
@@ -34,27 +39,32 @@ class KeypointsDataset(Dataset):
 
     def __getitem__(self, idx):
         sample = self.dataset[idx]
-        image = sample["image"]
-        image = np.array(image)
+        image = np.array(sample["image"])  # Convert to array once, if necessary
         keypoints = sample[self.kp_name][: self.num_keypoints]
 
-        present_class_labels = [i for i, kp in enumerate(keypoints) if kp is not None]
-        present_keypoints = [kp for kp in keypoints if kp is not None]
+        present_keypoints = []
+        present_class_labels = []
+
+        for i, kp in enumerate(keypoints):
+            if kp is not None:
+                present_keypoints.append(kp)
+                present_class_labels.append(i)
 
         if self.transform:
-            transformed = self.transform(
-                image=image,
-                keypoints=present_keypoints,
-                class_labels=present_class_labels,
-            )
+            transformed = self.transform(image=image, keypoints=present_keypoints, class_labels=present_class_labels)
             image = transformed["image"]
-            transformed_keypoints = [kp for kp in transformed["keypoints"]]
+            transformed_keypoints = transformed["keypoints"]
             visible_labels = transformed["class_labels"]
-            keypoints = [([] if i not in visible_labels else transformed_keypoints[visible_labels.index(i)]) for i in range(self.num_keypoints)]
-        else:
-            keypoints = [([] if i not in present_class_labels else present_keypoints[present_class_labels.index(i)]) for i in range(self.num_keypoints)]
 
-        return image, [[x] if len(x) > 0 else [] for x in keypoints]  # force each keypoint to be a separate channel
+            keypoints_lookup = {label: kp for label, kp in zip(visible_labels, transformed_keypoints)}
+            keypoints = [keypoints_lookup.get(i, []) for i in range(self.num_keypoints)]
+        else:
+            # Efficient lookup for existing keypoints
+            keypoints_lookup = {label: kp for label, kp in zip(present_class_labels, present_keypoints)}
+            keypoints = [keypoints_lookup.get(i, []) for i in range(self.num_keypoints)]
+
+        # Handle keypoints formatting
+        return image, [[x] if x else [] for x in keypoints]
 
     @staticmethod
     def collate_fn(data):
@@ -101,7 +111,7 @@ if __name__ == "__main__":
     )
 
     train_dataset = KeypointsDataset(
-        "train[:1%]",
+        "full",
         transform=train_transform,
     )
     print(len(train_dataset))
@@ -112,10 +122,11 @@ if __name__ == "__main__":
     print("\n\nDataloader\n\n")
     train_loader = DataLoader(
         train_dataset,
-        batch_size=1,
+        batch_size=4,
         num_workers=2,
         collate_fn=KeypointsDataset.collate_fn,
     )
+    print(len(train_loader))
     for i, (images, keypoints) in enumerate(train_loader):
         # print(images.shape)
         # print(keypoints)

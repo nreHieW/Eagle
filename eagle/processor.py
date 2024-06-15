@@ -391,7 +391,6 @@ class Processor:
         mask = labels == player_cluster
         player_mask = mask.astype(np.uint8) * 255
         hsv_image = cv2.bitwise_and(hsv_image, hsv_image, mask=player_mask)
-        # non_player_mask = cv2.bitwise_not(player_mask)
         color_count = {color: 0 for color in color_ranges.keys()}
         masks = []
         for color, (lower, upper) in color_ranges.items():
