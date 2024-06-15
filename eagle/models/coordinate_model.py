@@ -1,3 +1,7 @@
+import os
+
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
 from ultralytics import YOLO
 import cv2
 import torch
@@ -7,9 +11,11 @@ from tqdm import tqdm
 from .keypoint_hrnet import KeypointModel
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-import os
 from boxmot import DeepOCSORT
 from pathlib import Path
+
+PITCH_WIDTH = 105
+PITCH_HEIGHT = 68
 
 
 class CoordinateModel:
@@ -18,7 +24,7 @@ class CoordinateModel:
         # TODO: Support GPU inference
         # self.keypoint_model = YOLO("eagle/models/weights/keypoint_detector.onnx", task="pose", verbose=False)
         # self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)
-        self.detector_model = YOLO("eagle/models/weights/detector_medium.pt").to("mps")
+        self.detector_model = YOLO("eagle/models/weights/detector_large.pt").to("mps")
         self.keypoint_model = KeypointModel(57).to("mps")
         self.keypoint_model.load_state_dict(torch.load("eagle/models/weights/keypoints_main.pth"))
         self.keypoint_model.eval()
@@ -35,7 +41,7 @@ class CoordinateModel:
         )
         # print(os.environ["PYTORCH_ENABLE_MPS_FALLBACK"])
 
-    def get_coordinates(self, frames: np.ndarray, fps: int, num_homography: int = 1, num_keypoint_detection: int = 1, verbose: bool = True):
+    def get_coordinates(self, frames: np.ndarray, fps: int, num_homography: int = 1, num_keypoint_detection: int = 1, verbose: bool = True, calibration: bool = False) -> dict:
         """
         Get the coordinates of the players, goalkeepers and the ball
         :param frames: Input frames read using CV2 in BGR format
@@ -43,6 +49,7 @@ class CoordinateModel:
         :param num_homography: Number of times per second to calculate the homography matrix
         :param num_keypoint_detection: Number of times per second to detect keypoints using the model
         :param verbose: Whether to show the progress bar
+        :param calibration: Whether to calibrate the keypoints
 
         :return: dictionary containing the image coordinates of players, goalkeepers and the ball. The index is the frame number,
         The second level has 3 keys:
@@ -101,7 +108,10 @@ class CoordinateModel:
                 else:
                     keypoints = {**optical_flow_keypoints, **mem.get(i, {})}  # If we had memoized the model prediction, use it
 
-            prev_keypoints = self.calibrate_keypoints(frame, keypoints)
+            if calibration:
+                prev_keypoints = self.calibrate_keypoints(frame, keypoints)
+            else:
+                prev_keypoints = keypoints
             prev_gray = curr_gray
 
             objects = self.detect_objects(frame)
@@ -124,17 +134,39 @@ class CoordinateModel:
             for class_name, class_dict in objects.items():
                 for obj_id, obj_dict in class_dict.items():
                     bottom_center = obj_dict["Bottom_center"]
-                    bbox_coords = obj_dict["BBox"]
+                    bbox_coords = np.array(obj_dict["BBox"], dtype=np.uint16).tolist()
                     conf = obj_dict["Confidence"]
                     coords = np.array([[bottom_center]], dtype=np.float32)  # Dim needs to be 3
-                    transformed_coords = cv2.perspectiveTransform(coords, homography_matrix)[0]
-                    curr = {int(obj_id): {"BBox": bbox_coords, "Confidence": conf, "Transformed_Coordinates": transformed_coords.tolist()}}
+                    transformed_coords = cv2.perspectiveTransform(coords, homography_matrix)[0].astype(int)
+                    if transformed_coords[0, 0] < 0 or transformed_coords[0, 0] > PITCH_WIDTH or transformed_coords[0, 1] < 0 or transformed_coords[0, 1] > PITCH_HEIGHT:
+                        continue
+                    curr = {int(obj_id): {"BBox": bbox_coords, "Confidence": conf, "Transformed_Coordinates": transformed_coords.tolist()[0]}}
                     if class_name not in indiv:
                         indiv[class_name] = curr
                     else:
                         indiv[class_name].update(curr)
 
-            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints}
+            # Find the visible area of the pitch at each frame. Convert image coordinates to pitch coordinates
+            height, width = frame.shape[:2]
+            bottom_left = cv2.perspectiveTransform(np.array([[[0, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
+            bottom_right = cv2.perspectiveTransform(np.array([[[width, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
+            top_left = cv2.perspectiveTransform(np.array([[[0, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
+            top_right = cv2.perspectiveTransform(np.array([[[width, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
+
+            # left equation
+            m_left = (bottom_left[1] - top_left[1]) / (bottom_left[0] - top_left[0])
+            c_left = bottom_left[1] - m_left * bottom_left[0]
+            # right equation
+            m_right = (bottom_right[1] - top_right[1]) / (bottom_right[0] - top_right[0])
+            c_right = bottom_right[1] - m_right * bottom_right[0]
+
+            # Find the point on the lines that corresponds to y = 0 and y = PITCH_HEIGHT
+            x_left_0 = int((0 - c_left) / m_left)
+            x_left_height = int((PITCH_HEIGHT - c_left) / m_left)
+            x_right_0 = int((0 - c_right) / m_right)
+            x_right_height = int((PITCH_HEIGHT - c_right) / m_right)
+
+            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [(x_left_0, 0), (x_left_height, PITCH_HEIGHT), (x_right_height, PITCH_HEIGHT), (x_right_0, 0)]}
         return res
 
     def calculate_optical_flow(self, frame: np.ndarray, prev_gray: np.ndarray, prev_keypoints: dict, curr_gray: np.ndarray):
@@ -257,17 +289,28 @@ class CoordinateModel:
         coords = boxes.xyxy.cpu().numpy()
         conf = boxes.conf.cpu().numpy()
         class_labels = boxes.cls.cpu().numpy()
+
+        # Track only players, goalkeepers
         tracks = self.tracker.update(np.hstack((coords, conf.reshape(-1, 1), class_labels.reshape(-1, 1))), frame)
-        res = {"Player": {}, "Goalkeeper": {}, "Ball": {}}
+        res = {"Player": {}, "Goalkeeper": {}}
         for track_item in tracks:
-            x1, y1, x2, y2, id, conf, class_idx, idx = track_item
+            x1, y1, x2, y2, id, curr_conf, class_idx, idx = track_item
             label_str = self.class_names[class_idx]
             if label_str not in res:  # Ignore staff members and referees
                 continue
             res[label_str][id] = {
                 "BBox": [x1, y1, x2, y2],
-                "Confidence": conf,
+                "Confidence": curr_conf,
                 "Bottom_center": [int((x1 + x2) / 2), y2],
             }
+
+        # Detect the ball
+        if 2 in class_labels:
+            indices = np.where(class_labels == 2)[0]
+            for i, idx in enumerate(indices):
+                box = coords[idx].astype(int)
+                if "Ball" not in res:
+                    res["Ball"] = {}
+                res["Ball"][i] = {"BBox": box, "Confidence": conf[idx], "Bottom_center": [int((box[0] + box[2]) / 2), box[3]]}
 
         return res

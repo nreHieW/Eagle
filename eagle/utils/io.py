@@ -25,7 +25,7 @@ def read_video(path: str, fps: int = 24) -> list:
     return frames, fps
 
 
-def write_video(frames: list, path: str, fps: int = 24, is_rgb: bool = True) -> str:
+def write_video(frames: list, path: str, fps: int = 24, is_rgb: bool = False) -> str:
     """
     Write a list of frames to a video file.
     :param frames: List of images.
