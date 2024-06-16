@@ -87,6 +87,8 @@ class Processor:
             indiv_data_video = []
             # select non na values
             for col in df.columns:
+                if col in ["Bottom_Left", "Top_Left", "Top_Right", "Bottom_Right"]:
+                    continue
                 val = row[col]
                 if pd.isna(val):
                     continue

@@ -13,6 +13,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from boxmot import DeepOCSORT
 from pathlib import Path
+import math
 
 PITCH_WIDTH = 105
 PITCH_HEIGHT = 68
@@ -130,6 +131,9 @@ class CoordinateModel:
             if i % homography_interval == 0 or compute_homography:
                 img_pts = np.array(list(keypoints.values()), dtype=np.float32)
                 world_pts = np.array([GROUND_TRUTH_POINTS[point] for point in keypoints], dtype=np.float32)
+                if len(img_pts) < 4:
+                    compute_homography = True
+                    continue
                 for method in [cv2.RANSAC, cv2.RHO]:
                     new_homography_matrix, mask = cv2.findHomography(img_pts, world_pts, method, 5.0 if method is cv2.RANSAC else None)
                     if new_homography_matrix is not None:
@@ -164,18 +168,30 @@ class CoordinateModel:
             top_left = cv2.perspectiveTransform(np.array([[[0, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
             top_right = cv2.perspectiveTransform(np.array([[[width, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
 
-            # left equation
-            m_left = (bottom_left[1] - top_left[1]) / (bottom_left[0] - top_left[0])
-            c_left = bottom_left[1] - m_left * bottom_left[0]
-            # right equation
-            m_right = (bottom_right[1] - top_right[1]) / (bottom_right[0] - top_right[0])
-            c_right = bottom_right[1] - m_right * bottom_right[0]
+            try:
+                # left equation
+                m_left = (bottom_left[1] - top_left[1]) / (bottom_left[0] - top_left[0] + 1e-6)
+                c_left = bottom_left[1] - m_left * bottom_left[0]
+                # right equation
+                m_right = (bottom_right[1] - top_right[1]) / (bottom_right[0] - top_right[0] + 1e-6)
+                c_right = bottom_right[1] - m_right * bottom_right[0]
 
-            # Find the point on the lines that corresponds to y = 0 and y = PITCH_HEIGHT
-            x_left_0 = int((0 - c_left) / m_left)
-            x_left_height = int((PITCH_HEIGHT - c_left) / m_left)
-            x_right_0 = int((0 - c_right) / m_right)
-            x_right_height = int((PITCH_HEIGHT - c_right) / m_right)
+                # Find the point on the lines that corresponds to y = 0 and y = PITCH_HEIGHT
+                # print(m_left, c_left, m_right, c_right)
+                if m_left < 1e-6 or math.isnan(m_left) or math.isinf(m_left):
+                    x_left_0 = int((0 - c_left) / 1e-6)
+                    x_left_height = int((PITCH_HEIGHT - c_left) / 1e-6)
+                else:
+                    x_left_0 = int((0 - c_left) / m_left)
+                    x_left_height = int((PITCH_HEIGHT - c_left) / m_left)
+                if m_right < 1e-6 or math.isnan(m_right) or math.isinf(m_right):
+                    x_right_0 = int((0 - c_right) / 1e-6)
+                    x_right_height = int((PITCH_HEIGHT - c_right) / 1e-6)
+                else:
+                    x_right_0 = int((0 - c_right) / m_right)
+                    x_right_height = int((PITCH_HEIGHT - c_right) / m_right)
+            except Exception as e:
+                pass
 
             res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [(x_left_0, 0), (x_left_height, PITCH_HEIGHT), (x_right_height, PITCH_HEIGHT), (x_right_0, 0)]}
         return res
@@ -210,6 +226,8 @@ class CoordinateModel:
 
             # Filter rule 2: Color value of the 3x3 pixels grid around the keypoint change significantly, this implies it is occluded
             curr_x, curr_y = new_point.astype(int)
+            curr_x = np.clip(curr_x, 0, frame.shape[1] - 1)
+            curr_y = np.clip(curr_y, 0, frame.shape[0] - 1)
             curr_x_min, curr_x_max = max(0, curr_x - 1), min(frame.shape[1], curr_x + 2)
             curr_y_min, curr_y_max = max(0, curr_y - 1), min(frame.shape[0], curr_y + 2)
             curr_grid = frame[curr_y_min:curr_y_max, curr_x_min:curr_x_max]
