@@ -13,6 +13,7 @@ import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from torch.hub import load_state_dict_from_url
 
 
@@ -49,10 +50,7 @@ class ExtraConfig:
 @dataclass
 class ModelConfig:
     NAME: str
-    NUM_CLASSES: int
     TARGET_TYPE: str
-    IMAGE_SIZE: List[int]
-    HEATMAP_SIZE: List[int]
     SIGMA: int
     EXTRA: ExtraConfig
 
@@ -140,7 +138,15 @@ class Bottleneck(nn.Module):
 
 
 class HighResolutionModule(nn.Module):
-    def __init__(self, num_branches, blocks, num_blocks, num_inchannels, num_channels, multi_scale_output=True):
+    def __init__(
+        self,
+        num_branches,
+        blocks,
+        num_blocks,
+        num_inchannels,
+        num_channels,
+        multi_scale_output=True,
+    ):
         super(HighResolutionModule, self).__init__()
         self._check_branches(num_branches, blocks, num_blocks, num_inchannels, num_channels)
 
@@ -184,7 +190,14 @@ class HighResolutionModule(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.num_inchannels[branch_index], num_channels[branch_index], stride, downsample))
+        layers.append(
+            block(
+                self.num_inchannels[branch_index],
+                num_channels[branch_index],
+                stride,
+                downsample,
+            )
+        )
         self.num_inchannels[branch_index] = num_channels[branch_index] * block.expansion
         for _ in range(1, num_blocks[branch_index]):
             layers.append(block(self.num_inchannels[branch_index], num_channels[branch_index]))
@@ -212,7 +225,14 @@ class HighResolutionModule(nn.Module):
                 if j > i:
                     fuse_layer.append(
                         nn.Sequential(
-                            nn.Conv2d(num_inchannels[j], num_inchannels[i], 1, 1, 0, bias=False),
+                            nn.Conv2d(
+                                num_inchannels[j],
+                                num_inchannels[i],
+                                1,
+                                1,
+                                0,
+                                bias=False,
+                            ),
                             nn.BatchNorm2d(num_inchannels[i], momentum=BN_MOMENTUM),
                         )
                     )
@@ -225,7 +245,14 @@ class HighResolutionModule(nn.Module):
                             num_outchannels_conv3x3 = num_inchannels[i]
                             conv3x3s.append(
                                 nn.Sequential(
-                                    nn.Conv2d(num_inchannels[j], num_outchannels_conv3x3, 3, 2, 1, bias=False),
+                                    nn.Conv2d(
+                                        num_inchannels[j],
+                                        num_outchannels_conv3x3,
+                                        3,
+                                        2,
+                                        1,
+                                        bias=False,
+                                    ),
                                     nn.BatchNorm2d(num_outchannels_conv3x3, momentum=BN_MOMENTUM),
                                 )
                             )
@@ -233,7 +260,14 @@ class HighResolutionModule(nn.Module):
                             num_outchannels_conv3x3 = num_inchannels[j]
                             conv3x3s.append(
                                 nn.Sequential(
-                                    nn.Conv2d(num_inchannels[j], num_outchannels_conv3x3, 3, 2, 1, bias=False),
+                                    nn.Conv2d(
+                                        num_inchannels[j],
+                                        num_outchannels_conv3x3,
+                                        3,
+                                        2,
+                                        1,
+                                        bias=False,
+                                    ),
                                     nn.BatchNorm2d(num_outchannels_conv3x3, momentum=BN_MOMENTUM),
                                     nn.ReLU(inplace=True),
                                 )
@@ -314,13 +348,7 @@ class KeypointHRNet(nn.Module):
         self.transition3 = self._make_transition_layer(pre_stage_channels, num_channels)
         self.stage4, pre_stage_channels = self._make_stage(self.stage4_cfg, num_channels, multi_scale_output=False)
 
-        self.final_layer = nn.Conv2d(
-            in_channels=pre_stage_channels[0],
-            out_channels=cfg.NUM_CLASSES,
-            kernel_size=extra.FINAL_CONV_KERNEL,
-            stride=1,
-            padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0,
-        )
+        self.out_channels = pre_stage_channels[0]
 
     def _make_transition_layer(self, num_channels_pre_layer, num_channels_cur_layer):
         num_branches_cur = len(num_channels_cur_layer)
@@ -332,7 +360,14 @@ class KeypointHRNet(nn.Module):
                 if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
                     transition_layers.append(
                         nn.Sequential(
-                            nn.Conv2d(num_channels_pre_layer[i], num_channels_cur_layer[i], 3, 1, 1, bias=False),
+                            nn.Conv2d(
+                                num_channels_pre_layer[i],
+                                num_channels_cur_layer[i],
+                                3,
+                                1,
+                                1,
+                                bias=False,
+                            ),
                             nn.BatchNorm2d(num_channels_cur_layer[i]),
                             nn.ReLU(inplace=True),
                         )
@@ -359,7 +394,13 @@ class KeypointHRNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+                nn.Conv2d(
+                    self.inplanes,
+                    planes * block.expansion,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
                 nn.BatchNorm2d(planes * block.expansion, momentum=BN_MOMENTUM),
             )
 
@@ -388,7 +429,12 @@ class KeypointHRNet(nn.Module):
 
             modules.append(
                 HighResolutionModule(
-                    num_branches, block, num_blocks, num_inchannels, num_channels, reset_multi_scale_output
+                    num_branches,
+                    block,
+                    num_blocks,
+                    num_inchannels,
+                    num_channels,
+                    reset_multi_scale_output,
                 )
             )
             num_inchannels = modules[-1].get_num_inchannels()
@@ -432,10 +478,7 @@ class KeypointHRNet(nn.Module):
             else:
                 x_list.append(y_list[i])
         y_list = self.stage4(x_list)
-
-        x = self.final_layer(y_list[0])
-
-        return x
+        return y_list[0]
 
     def init_weights(self):
         logger.info("=> init weights from normal distribution")
@@ -455,12 +498,20 @@ class KeypointHRNet(nn.Module):
                     if name in ["bias"]:
                         nn.init.constant_(m.bias, 0)
 
+    def get_n_channels_out(self):
+        return self.out_channels
 
-def get_hrnet_model(img_size, heatmap_size, num_classes=57, pretrained=False):
+
+def get_hrnet_model(pretrained=False):
     extra = ExtraConfig(
         FINAL_CONV_KERNEL=1,
         STAGE2=StageConfig(
-            NUM_MODULES=1, NUM_BRANCHES=2, BLOCK="BASIC", NUM_BLOCKS=[4, 4], NUM_CHANNELS=[48, 96], FUSE_METHOD="SUM"
+            NUM_MODULES=1,
+            NUM_BRANCHES=2,
+            BLOCK="BASIC",
+            NUM_BLOCKS=[4, 4],
+            NUM_CHANNELS=[48, 96],
+            FUSE_METHOD="SUM",
         ),
         STAGE3=StageConfig(
             NUM_MODULES=4,
@@ -482,17 +533,62 @@ def get_hrnet_model(img_size, heatmap_size, num_classes=57, pretrained=False):
 
     model_config = ModelConfig(
         NAME="hrnet",
-        NUM_CLASSES=num_classes,
         TARGET_TYPE="gaussian",
-        IMAGE_SIZE=img_size,
-        HEATMAP_SIZE=heatmap_size,
         SIGMA=3,
         EXTRA=extra,
     )
 
     model = KeypointHRNet(model_config)
     if pretrained:
-        model.load_state_dict(load_state_dict_from_url(IMAGENET_URL), strict=False)
+        model.load_state_dict(load_state_dict_from_url(IMAGENET_URL, model_dir=".", file_name="model.pth"), strict=False)
     else:
         model.init_weights()
     return model
+
+
+class KeypointModel(nn.Module):
+    def __init__(self, n_heatmaps: int = 57):
+        super(KeypointModel, self).__init__()
+        backbone = get_hrnet_model(False)
+        head = nn.Conv2d(
+            in_channels=backbone.get_n_channels_out(),
+            out_channels=n_heatmaps,
+            kernel_size=(3, 3),
+            padding="same",
+        )
+        self.unnormalized_model = nn.Sequential(
+            backbone,
+            head,
+        )
+        self.n_heatmaps = n_heatmaps
+
+    def forward(self, x: torch.Tensor):
+        """
+        x shape must be of shape (N,3,H,W)
+        returns tensor with shape (N, n_heatmaps, H,W)
+        """
+        return torch.sigmoid(self.forward_unnormalized(x))
+
+    def forward_unnormalized(self, x: torch.Tensor):
+        return self.unnormalized_model(x)
+
+    def get_keypoints(self, x: torch.Tensor):
+        """
+        x shape must be of shape (N,3,H,W)
+        returns list of list of tuples
+        Coordinates are in normalized coordinates
+        """
+        batch_heatmaps = self.forward(x)  # Shape: (N, n_heatmaps, H, W)
+        batch_coords = []
+        for heatmaps in batch_heatmaps:
+            coords = []
+            for i in range(self.n_heatmaps):
+                heatmap = heatmaps[i].detach().cpu().numpy()  # Shape: (H, W)
+                y, x = np.unravel_index(np.argmax(heatmap), heatmap.shape)
+                score = heatmap[y, x]
+                x = x / 240
+                y = y / 135
+                if score > 0.01:
+                    coords.append((i, x, y, score))
+            batch_coords.append(coords)
+        return batch_coords
