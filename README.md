@@ -1,15 +1,15 @@
 # Eagle
 
 <div align="center">
+  <p>
+  <img src="demo.gif" width="640" height="400"/>
+  </p>
   <div>
 <a target="_blank" href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
   </div>
-  <p>
-  <img src="demo.gif" width="640" height="400"/>
-  </p>
   <br>
 </div>
 
