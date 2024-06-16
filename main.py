@@ -27,12 +27,12 @@ def main():
     coordinates = model.get_coordinates(frames, fps, num_homography=1, num_keypoint_detection=3)
 
     with open(f"{root}/raw_coordinates.json", "w") as f:
-        json.dump(coordinates, f, default=str)
+        json.dump(coordinates, f, default=float)
 
     print("Processing Data")
 
     processor = Processor(coordinates, frames, fps)
-    df, team_mapping = processor.process_data()  # Smoothing
+    df, team_mapping = processor.process_data(smooth=False)
     df.to_json(f"{root}/raw_data.json", orient="records")
     with open(f"{root}/metadata.json", "w") as f:
         json.dump({"fps": fps, "team_mapping": team_mapping}, f, default=str)

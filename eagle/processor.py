@@ -58,7 +58,7 @@ def smooth_df(df, col_name: str):
 
 class Processor:
     def __init__(self, coords, frames: list, fps: int):
-        assert len(coords) == len(frames), "Number of frames and coordinates should be same"
+        assert len(coords) == len(frames), f"Length of coords ({len(coords)}) and frames ({len(frames)}) should be the same"
         self.coords = coords  # Data should be same format as CoordinateModel output
         self.frames = frames
         self.fps = fps
@@ -95,6 +95,7 @@ class Processor:
                 if "ball" in col.lower():  # handle separately
                     continue
                 id = col.split("_")[1]
+                id = int(id)
                 col_type = col.split("_")[0]
                 item = {"ID": id, "Coordinates": val, "Type": col_type}
                 if "video" in col:
@@ -169,6 +170,18 @@ class Processor:
         return df
 
     def merge_data(self, df, team_mapping):
+        goal_keeper_cols = [x for x in df.columns if "Goalkeeper" in x and "video" in x]
+        goal_keeper_ids = [x.split("_")[1] for x in goal_keeper_cols]
+        for id in goal_keeper_ids:
+            player_col = f"Player_{id}"
+            player_col_video = f"Player_{id}_video"
+            goal_keeper_col = f"Goalkeeper_{id}"
+            goal_keeper_col_video = f"Goalkeeper_{id}_video"
+            if player_col in df.columns and player_col_video in df.columns:
+                df[goal_keeper_col] = df[player_col].combine_first(df[goal_keeper_col])
+                df[goal_keeper_col_video] = df[player_col_video].combine_first(df[goal_keeper_col_video])
+                df.drop(columns=[player_col, player_col_video], inplace=True)
+
         cols = [x for x in df.columns if "Ball" not in x and "video" in x]
         TEMPORAL_THRESHOLD = int(self.fps * 1.1)
 
@@ -229,7 +242,9 @@ class Processor:
 
                 # Condition 3 - Team
                 id = col.split("_")[1]
+                id = int(id)
                 candidate_id = candidate.split("_")[1]
+                candidate_id = int(candidate_id)
 
                 # Edge case: If we could not determine the team previously, it will not appear in the team mapping.
                 # then, we just assume that this unidentified player can belong to any team
@@ -245,7 +260,6 @@ class Processor:
             merge_real.append((a.replace("_video", ""), b.replace("_video", "")))
 
         to_merge.extend(merge_real)
-
         merged_cols = {}
 
         def find_root(col):
@@ -342,11 +356,33 @@ class Processor:
 
     def get_team_mapping(self):  # This is pretty slow
         counts = {}
+        # done = set()
         # First pass: Get the frequency of colors detected for each player
         for frame, coord in zip(self.frames, self.coords):
+            curr_crops = [item["BBox"] for item in self.coords[coord]["Coordinates"]["Player"].values()]
             for player_id, item in self.coords[coord]["Coordinates"]["Player"].items():
+                player_id = int(player_id)
+                # if player_id in done:
+                #     continue
                 bbox = item["BBox"]
                 x1, y1, x2, y2 = bbox
+                curr_size = (x2 - x1) * (y2 - y1)
+                # determine amount of overlap with other crops
+                num_overlaps = 0
+                max_overlap = 0
+                for crop in curr_crops:
+                    if crop == bbox:
+                        continue
+                    x1_, y1_, x2_, y2_ = crop
+                    x_overlap = max(0, min(x2, x2_) - max(x1, x1_))
+                    y_overlap = max(0, min(y2, y2_) - max(y1, y1_))
+                    overlap = x_overlap * y_overlap
+                    max_overlap = max(max_overlap, overlap)
+                    if overlap > 0:
+                        num_overlaps += 1
+                prop_overlap = max_overlap / curr_size
+                if prop_overlap > 0.5:
+                    continue
                 crop = frame[y1:y2, x1:x2]
                 indiv_counts = self.detect_color(crop)
                 if player_id not in counts:
@@ -354,7 +390,11 @@ class Processor:
                 for color, count in indiv_counts:
                     if color not in counts[player_id]:
                         counts[player_id][color] = 0
-                    counts[player_id][color] += 1
+                    counts[player_id][color] += 1 - prop_overlap
+
+                # if num_overlaps == 0 or prop_overlap < 0.05:
+                #     done.add(player_id)
+
         out = {player_id: max(color_count, key=color_count.get) for player_id, color_count in counts.items()}
 
         # Second pass to fix outliers

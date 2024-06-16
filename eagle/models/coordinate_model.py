@@ -30,7 +30,7 @@ def get_device():
 
 class CoordinateModel:
 
-    def __init__(self):
+    def __init__(self, keypoint_conf: float = 0.3, detector_conf: float = 0.1):
         device = get_device()
         self.device = device
         print(f"Using {self.device} for inference")
@@ -52,6 +52,8 @@ class CoordinateModel:
             device=0 if device == "cuda" else device,
             fp16=False,
         )
+        self.keypoint_conf = keypoint_conf
+        self.detector_conf = detector_conf
 
     def get_coordinates(self, frames: np.ndarray, fps: int, num_homography: int = 1, num_keypoint_detection: int = 1, verbose: bool = True, calibration: bool = False) -> dict:
         """
@@ -103,6 +105,8 @@ class CoordinateModel:
                             prev_frame = frames[j]
                             prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
                             prev_keypoints = self.calculate_optical_flow(prev_frame, prev_gray, prev_keypoints, next_gray)
+                            # combine
+                            mem[j] = {**prev_keypoints, **mem.get(j, {})}
                             next_gray = prev_gray
                     else:
                         # Calculate optical flow for keypoints tracking and combine with model detection
@@ -120,20 +124,18 @@ class CoordinateModel:
                 else:
                     keypoints = {**optical_flow_keypoints, **mem.get(i, {})}  # If we had memoized the model prediction, use it
 
+            keypoints = {**keypoints, **mem.get(i, {})}
             if calibration:
-                prev_keypoints = self.calibrate_keypoints(frame, keypoints)
-            else:
-                prev_keypoints = keypoints
+                keypoints = self.calibrate_keypoints(frame, keypoints)
+            prev_keypoints = keypoints
             prev_gray = curr_gray
-
             objects = self.detect_objects(frame)
-
             if i % homography_interval == 0 or compute_homography:
                 img_pts = np.array(list(keypoints.values()), dtype=np.float32)
                 world_pts = np.array([GROUND_TRUTH_POINTS[point] for point in keypoints], dtype=np.float32)
                 if len(img_pts) < 4:
                     compute_homography = True
-                    continue
+                    pass
                 for method in [cv2.RANSAC, cv2.RHO]:
                     new_homography_matrix, mask = cv2.findHomography(img_pts, world_pts, method, 5.0 if method is cv2.RANSAC else None)
                     if new_homography_matrix is not None:
@@ -167,33 +169,15 @@ class CoordinateModel:
             bottom_right = cv2.perspectiveTransform(np.array([[[width, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
             top_left = cv2.perspectiveTransform(np.array([[[0, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
             top_right = cv2.perspectiveTransform(np.array([[[width, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
-
-            try:
-                # left equation
-                m_left = (bottom_left[1] - top_left[1]) / (bottom_left[0] - top_left[0] + 1e-6)
-                c_left = bottom_left[1] - m_left * bottom_left[0]
-                # right equation
-                m_right = (bottom_right[1] - top_right[1]) / (bottom_right[0] - top_right[0] + 1e-6)
-                c_right = bottom_right[1] - m_right * bottom_right[0]
-
-                # Find the point on the lines that corresponds to y = 0 and y = PITCH_HEIGHT
-                # print(m_left, c_left, m_right, c_right)
-                if m_left < 1e-6 or math.isnan(m_left) or math.isinf(m_left):
-                    x_left_0 = int((0 - c_left) / 1e-6)
-                    x_left_height = int((PITCH_HEIGHT - c_left) / 1e-6)
-                else:
-                    x_left_0 = int((0 - c_left) / m_left)
-                    x_left_height = int((PITCH_HEIGHT - c_left) / m_left)
-                if m_right < 1e-6 or math.isnan(m_right) or math.isinf(m_right):
-                    x_right_0 = int((0 - c_right) / 1e-6)
-                    x_right_height = int((PITCH_HEIGHT - c_right) / 1e-6)
-                else:
-                    x_right_0 = int((0 - c_right) / m_right)
-                    x_right_height = int((PITCH_HEIGHT - c_right) / m_right)
-            except Exception as e:
-                pass
-
-            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [(x_left_0, 0), (x_left_height, PITCH_HEIGHT), (x_right_height, PITCH_HEIGHT), (x_right_0, 0)]}
+            # bottom_left[0] = np.clip(bottom_left[0], 0, PITCH_WIDTH)
+            # bottom_left[1] = np.clip(bottom_left[1], 0, PITCH_HEIGHT)
+            # bottom_right[0] = np.clip(bottom_right[0], 0, PITCH_WIDTH)
+            # bottom_right[1] = np.clip(bottom_right[1], 0, PITCH_HEIGHT)
+            # top_left[0] = np.clip(top_left[0], 0, PITCH_WIDTH)
+            # top_left[1] = np.clip(top_left[1], 0, PITCH_HEIGHT)
+            # top_right[0] = np.clip(top_right[0], 0, PITCH_WIDTH)
+            # top_right[1] = np.clip(top_right[1], 0, PITCH_HEIGHT)
+            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [bottom_left.tolist(), top_left.tolist(), top_right.tolist(), bottom_right.tolist()]}
         return res
 
     def calculate_optical_flow(self, frame: np.ndarray, prev_gray: np.ndarray, prev_keypoints: dict, curr_gray: np.ndarray):
@@ -235,6 +219,8 @@ class CoordinateModel:
             avg_hue_curr = np.mean(curr_grid[:, :, 0])
 
             prev_x, prev_y = point.astype(int)
+            prev_x = np.clip(prev_x, 0, frame.shape[1] - 1)
+            prev_y = np.clip(prev_y, 0, frame.shape[0] - 1)
             prev_x_min, prev_x_max = max(0, prev_x - 1), min(frame.shape[1], prev_x + 2)
             prev_y_min, prev_y_max = max(0, prev_y - 1), min(frame.shape[0], prev_y + 2)
             prev_grid = frame[prev_y_min:prev_y_max, prev_x_min:prev_x_max]
@@ -263,7 +249,7 @@ class CoordinateModel:
         keypoints = self.keypoint_model.get_keypoints(frame)[0]
         res = {}
         for i, x, y, score in keypoints:
-            if score < 0.5:
+            if score < self.keypoint_conf:
                 continue
             label = INTERSECTION_TO_PITCH_POINTS[i]
             res[label] = (int(x * width), int(y * height))
@@ -313,7 +299,7 @@ class CoordinateModel:
         Second level keys are the ids
         Second level values are the Bounding Boxes, Confidence and Bottom Center
         """
-        detector_pred = self.detector_model(frame, verbose=False, conf=0.1)
+        detector_pred = self.detector_model(frame, verbose=False, conf=self.detector_conf)
         boxes = detector_pred[0].boxes
         coords = boxes.xyxy.cpu().numpy()
         conf = boxes.conf.cpu().numpy()

@@ -165,5 +165,6 @@ cython_debug/
 *.mp4
 *.onnx
 *.pth
+*.png
 weights/
 output/
