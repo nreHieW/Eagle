@@ -1,4 +1,5 @@
 import cv2
+import os
 
 
 def read_video(path: str, fps: int = 24) -> list:
@@ -9,6 +10,8 @@ def read_video(path: str, fps: int = 24) -> list:
 
     :return: List of frames and the fps of the video.
     """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
     cap = cv2.VideoCapture(path)
     frames = []
     native_fps = cap.get(cv2.CAP_PROP_FPS)

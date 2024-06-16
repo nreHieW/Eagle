@@ -14,6 +14,7 @@ import numpy as np
 def main():
     parser = ArgumentParser()
     parser.add_argument("--video_path", type=str, required=True)
+    parser.add_argument("--fps", type=int, default=24)
     args = parser.parse_args()
 
     os.makedirs("output", exist_ok=True)
@@ -21,7 +22,7 @@ def main():
     os.makedirs(f"output/{video_name}", exist_ok=True)
     root = f"output/{video_name}"
 
-    frames, fps = read_video(args.video_path)
+    frames, fps = read_video(args.video_path, args.fps)
     model = CoordinateModel()
     coordinates = model.get_coordinates(frames, fps, num_homography=1, num_keypoint_detection=3)
 
@@ -68,8 +69,8 @@ def main():
                     else:
                         color = (255, 0, 0)
 
-                cv2.ellipse(curr_frame, (int(x), int(y)), (25, 10), 0, -45, 235, color, 1)
-                cv2.putText(curr_frame, str(id), (int(x) - 3, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.ellipse(curr_frame, (int(x), int(y)), (35, 18), 0, -45, 235, color, 1)
+                cv2.putText(curr_frame, str(id), (int(x) - 3, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
         out.append(curr_frame)
 
