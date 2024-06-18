@@ -11,9 +11,8 @@ from tqdm import tqdm
 from .keypoint_hrnet import KeypointModel
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-from boxmot import DeepOCSORT
+from boxmot import DeepOCSORT, BoTSORT
 from pathlib import Path
-import math
 
 PITCH_WIDTH = 105
 PITCH_HEIGHT = 68
@@ -28,9 +27,24 @@ def get_device():
     return device
 
 
+def find_x_at_y(pt1, pt2, y_target):
+    x1, y1 = pt1
+    x2, y2 = pt2
+    # Calculate the slope (m)
+    m = (y2 - y1) / (x2 - x1)
+
+    # Calculate the y-intercept (c) using y1 = m*x1 + c
+    c = y1 - m * x1
+
+    # Find x when y = y_target
+    x_target = (y_target - c) / m
+
+    return x_target
+
+
 class CoordinateModel:
 
-    def __init__(self, keypoint_conf: float = 0.3, detector_conf: float = 0.1):
+    def __init__(self, keypoint_conf: float = 0.3, detector_conf: float = 0.35):
         device = get_device()
         self.device = device
         print(f"Using {self.device} for inference")
@@ -38,7 +52,7 @@ class CoordinateModel:
         if device == "cpu":
             self.detector_model = YOLO("eagle/models/weights/detector_medium.onnx", task="detect", verbose=False)  # by default uses the medium model for cpu
         else:
-            self.detector_model = YOLO("eagle/models/weights/detector_large.pt").to(device)
+            self.detector_model = YOLO("eagle/models/weights/detector_large_hd.pt").to(device)
         self.keypoint_model = KeypointModel(57).to(device)
         self.keypoint_model.load_state_dict(torch.load("eagle/models/weights/keypoints_main.pth"))
         self.keypoint_model.eval()
@@ -47,7 +61,7 @@ class CoordinateModel:
             [A.Resize(540, 960), A.Normalize(), ToTensorV2()],
         )
         self.lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        self.tracker = DeepOCSORT(
+        self.tracker = BoTSORT(
             model_weights=Path("osnet_x0_25_msmt17.pt"),
             device=0 if device == "cuda" else device,
             fp16=False,
@@ -164,20 +178,21 @@ class CoordinateModel:
                         indiv[class_name].update(curr)
 
             # Find the visible area of the pitch at each frame. Convert image coordinates to pitch coordinates
+            # 0, 0 is top left in cv2
             height, width = frame.shape[:2]
-            bottom_left = cv2.perspectiveTransform(np.array([[[0, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
-            bottom_right = cv2.perspectiveTransform(np.array([[[width, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
-            top_left = cv2.perspectiveTransform(np.array([[[0, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
-            top_right = cv2.perspectiveTransform(np.array([[[width, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0]
-            # bottom_left[0] = np.clip(bottom_left[0], 0, PITCH_WIDTH)
-            # bottom_left[1] = np.clip(bottom_left[1], 0, PITCH_HEIGHT)
-            # bottom_right[0] = np.clip(bottom_right[0], 0, PITCH_WIDTH)
-            # bottom_right[1] = np.clip(bottom_right[1], 0, PITCH_HEIGHT)
-            # top_left[0] = np.clip(top_left[0], 0, PITCH_WIDTH)
-            # top_left[1] = np.clip(top_left[1], 0, PITCH_HEIGHT)
-            # top_right[0] = np.clip(top_right[0], 0, PITCH_WIDTH)
-            # top_right[1] = np.clip(top_right[1], 0, PITCH_HEIGHT)
-            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [bottom_left.tolist(), top_left.tolist(), top_right.tolist(), bottom_right.tolist()]}
+            top_left = cv2.perspectiveTransform(np.array([[[0, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0].tolist()
+            top_right = cv2.perspectiveTransform(np.array([[[width, 0]]], dtype=np.float32), homography_matrix)[0].astype(int)[0].tolist()
+            bottom_left = cv2.perspectiveTransform(np.array([[[0, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0].tolist()
+            bottom_right = cv2.perspectiveTransform(np.array([[[width, height]]], dtype=np.float32), homography_matrix)[0].astype(int)[0].tolist()
+
+            try:
+                top_left = (find_x_at_y(top_left, bottom_left, PITCH_HEIGHT), PITCH_HEIGHT)
+                top_right = (find_x_at_y(top_right, bottom_right, PITCH_HEIGHT), PITCH_HEIGHT)
+                bottom_left = (find_x_at_y(bottom_left, top_left, 0), 0)
+                bottom_right = (find_x_at_y(bottom_right, top_right, 0), 0)
+            except:
+                pass  # Common errors are division by zero in the gradient calculation or some weird math problems
+            res[i] = {"Coordinates": indiv, "Time": f"{i // fps // 60:02d}:{i // fps % 60:02d}", "Keypoints": prev_keypoints, "Boundaries": [bottom_left, top_left, top_right, bottom_right]}
         return res
 
     def calculate_optical_flow(self, frame: np.ndarray, prev_gray: np.ndarray, prev_keypoints: dict, curr_gray: np.ndarray):
@@ -310,6 +325,10 @@ class CoordinateModel:
         res = {"Player": {}, "Goalkeeper": {}}
         for track_item in tracks:
             x1, y1, x2, y2, id, curr_conf, class_idx, idx = track_item
+            x1 = int(np.clip(x1, 0, frame.shape[1] - 1))
+            y1 = int(np.clip(y1, 0, frame.shape[0] - 1))
+            x2 = int(np.clip(x2, 0, frame.shape[1] - 1))
+            y2 = int(np.clip(y2, 0, frame.shape[0] - 1))
             label_str = self.class_names[class_idx]
             if label_str not in res:  # Ignore staff members and referees
                 continue
@@ -327,5 +346,4 @@ class CoordinateModel:
                 if "Ball" not in res:
                     res["Ball"] = {}
                 res["Ball"][i] = {"BBox": box, "Confidence": conf[idx], "Bottom_center": [int((box[0] + box[2]) / 2), box[3]]}
-
         return res

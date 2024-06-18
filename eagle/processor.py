@@ -57,11 +57,13 @@ def smooth_df(df, col_name: str):
 
 
 class Processor:
-    def __init__(self, coords, frames: list, fps: int):
+    def __init__(self, coords, frames: list, fps: int, debug: bool = False, filter_ball_detections: bool = False):
         assert len(coords) == len(frames), f"Length of coords ({len(coords)}) and frames ({len(frames)}) should be the same"
         self.coords = coords  # Data should be same format as CoordinateModel output
         self.frames = frames
         self.fps = fps
+        self.debug = debug
+        self.filter_ball_detections = filter_ball_detections
 
     def process_data(self, smooth: bool = False):
         df = self.create_dataframe()
@@ -69,7 +71,7 @@ class Processor:
         df = interpolate_df(df, "Ball_video", fill=True)
         team_mapping = self.get_team_mapping()
         df.index = df.index.astype(int)
-        df = self.merge_data(df, team_mapping)
+        df = self.merge_data(df, team_mapping)  # this is to fix any tracker errors (the same player is given different ids in different frames)
 
         for col in df.columns:
             df = interpolate_df(df, col, fill=False)
@@ -161,8 +163,12 @@ class Processor:
             indiv_real = sorted(indiv_real, key=lambda x: x[1], reverse=True)
             ball_coords.append([x[0] for x in indiv_real])
             ball_coords_image.append([x[0] for x in indiv_img])
-        final_ball_coords_img = self.parse_ball_detections_with_kalman(ball_coords_image)
-        final_ball_coords = self.parse_ball_detections_with_kalman(ball_coords)
+
+        h, w, _ = self.frames[0].shape
+        final_ball_coords_img = self.parse_ball_detections_with_kalman(ball_coords_image, filter=self.filter_ball_detections, threshold=0.1 * w)
+        final_ball_coords = self.parse_ball_detections_with_kalman(ball_coords, filter=False)  # False here because we use the image coordinates to filter
+        # use the image coordinates fo filter
+        final_ball_coords = [final_ball_coords[i] if final_ball_coords_img[i] is not None else None for i in range(len(final_ball_coords_img))]
         df = pd.DataFrame(out).T
         df["Ball"] = [x if x is not None else np.nan for x in final_ball_coords]
         df["Ball_video"] = [x if x is not None else np.nan for x in final_ball_coords_img]
@@ -186,9 +192,7 @@ class Processor:
         TEMPORAL_THRESHOLD = int(self.fps * 1.1)
 
         player_video_cols = [x for x in cols if "Player" in x and "video" in x]
-        player_cols = [x for x in cols if "Player" in x and "video" not in x]
         goalkeeper_video_cols = [x for x in cols if "Goalkeeper" in x and "video" in x]
-        goalkeeper_cols = [x for x in cols if "Goalkeeper" in x and "video" not in x]
 
         to_merge = []
 
@@ -211,7 +215,7 @@ class Processor:
                 last_valid_index_candidate = df[candidate].last_valid_index()
 
                 # If there is an overlap, ignore
-                if last_valid_index_col is not None and first_valid_index_candidate is not None and last_valid_index_col >= first_valid_index_candidate:
+                if last_valid_index_col is not None and first_valid_index_candidate is not None and (last_valid_index_col >= first_valid_index_candidate or last_valid_index_candidate >= first_valid_index_col):
                     continue
 
                 # Check which appears first
@@ -261,6 +265,9 @@ class Processor:
 
         to_merge.extend(merge_real)
         merged_cols = {}
+        if self.debug:
+            print(f"Merging {len(to_merge)} columns")
+            print("To Merge:", to_merge)
 
         def find_root(col):
             # Find the root column to merge into
@@ -280,10 +287,11 @@ class Processor:
 
         return df
 
-    def parse_ball_detections_with_kalman(self, detections: list, num_to_init: int = 5, threshold: int = 20):
+    def parse_ball_detections_with_kalman(self, detections: list, num_to_init: int = 5, filter: bool = True, threshold: int = 100):
         init_vals = []
         non_none_init_vals = 0
         i = 0
+        num_removed = 0
         while True:
             if (non_none_init_vals >= 2) and (len(init_vals) >= num_to_init):
                 break
@@ -333,37 +341,44 @@ class Processor:
                 best_candidate = candidates[np.argmin(distances)]
                 measurement = np.array([[np.float32(best_candidate[0])], [np.float32(best_candidate[1])]])
 
-            if prev_pos is not None:
-                dist = calculate_distance((measurement[0, 0], measurement[1, 0]), prev_pos)[0]
-                if dist > threshold * (i - prev_idx):
-                    # If the distance is too large, we assume that the detection is incorrect
-                    ball_positions.append(None)
+            if filter:
+                if prev_pos is not None:
+                    # This is not the first detection, so we compute the distance from the previous detection
+                    dist = calculate_distance((measurement[0, 0], measurement[1, 0]), prev_pos)[0]
+                    # compute threshold based on the distance from 2 frames ago and the previous frame
+                    # print(threshold, dist, prev_pos, two_frames_pos)
+                    if dist > threshold * (i - prev_idx):
+                        # If the distance is too large, we assume that the detection is incorrect
+                        ball_positions.append(None)
+                        num_removed += 1
+                    else:
+                        # If the distance is reasonable, we correct the Kalman filter
+                        kf.correct(measurement)
+                        prediction = kf.predict()
+                        ball_positions.append((measurement[0, 0], measurement[1, 0]))
+                        prev_pos = measurement
+                        prev_idx = i
                 else:
-                    # If the distance is reasonable, we correct the Kalman filter
+                    # If this is the first detection, we just correct the Kalman filter
                     kf.correct(measurement)
-                    prediction = kf.predict()
                     ball_positions.append((measurement[0, 0], measurement[1, 0]))
                     prev_pos = measurement
                     prev_idx = i
             else:
-                # If this is the first detection, we just correct the Kalman filter
-                kf.correct(measurement)
                 ball_positions.append((measurement[0, 0], measurement[1, 0]))
-                prev_pos = measurement
-                prev_idx = i
 
+        if self.debug and filter:
+            print(f"Removed {num_removed} detections")
         return ball_positions
 
     def get_team_mapping(self):  # This is pretty slow
         counts = {}
-        # done = set()
         # First pass: Get the frequency of colors detected for each player
         for frame, coord in zip(self.frames, self.coords):
             curr_crops = [item["BBox"] for item in self.coords[coord]["Coordinates"]["Player"].values()]
             for player_id, item in self.coords[coord]["Coordinates"]["Player"].items():
                 player_id = int(player_id)
-                # if player_id in done:
-                #     continue
+
                 bbox = item["BBox"]
                 x1, y1, x2, y2 = bbox
                 curr_size = (x2 - x1) * (y2 - y1)
@@ -381,7 +396,7 @@ class Processor:
                     if overlap > 0:
                         num_overlaps += 1
                 prop_overlap = max_overlap / curr_size
-                if prop_overlap > 0.5:
+                if prop_overlap > 0.35:
                     continue
                 crop = frame[y1:y2, x1:x2]
                 indiv_counts = self.detect_color(crop)
@@ -391,9 +406,6 @@ class Processor:
                     if color not in counts[player_id]:
                         counts[player_id][color] = 0
                     counts[player_id][color] += 1 - prop_overlap
-
-                # if num_overlaps == 0 or prop_overlap < 0.05:
-                #     done.add(player_id)
 
         out = {player_id: max(color_count, key=color_count.get) for player_id, color_count in counts.items()}
 
@@ -432,6 +444,10 @@ class Processor:
         player_cluster = 1 if non_player_cluster == 0 else 0
         mask = labels == player_cluster
         player_mask = mask.astype(np.uint8) * 255
+
+        # use top half
+        # player_mask = player_mask[: player_mask.shape[0] // 2, :]
+        # hsv_image = hsv_image[: hsv_image.shape[0] // 2, :]
         hsv_image = cv2.bitwise_and(hsv_image, hsv_image, mask=player_mask)
         color_count = {color: 0 for color in color_ranges.keys()}
         masks = []

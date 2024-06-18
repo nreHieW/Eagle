@@ -54,8 +54,19 @@ Given that Eagle was trained on consumer hardware, it is not 100% accurate espec
 Some common debugging strategies:
 - The most common issue is incorrect team assignment. Team assignment is currently done purely based on heuristics. The solution is simply to edit the team mapping dictionary in the metadata.
 - The second most common issue is when balls are not detected (given their size). This could cause erratic ball coordinates since Eagle interpolates the coordinates. One solution is to reduce the confidence threshold required for the detector (`detector_conf`).
-- Lastly, a homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`)
+- A homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`)
+- Lastly, if the ball detections are extremely inaccurate, one solution is to increase the input resolution to get higher recall. If the model is detecting many objects as ball, set `filter_ball_detections=True` for the processor which will attempt to use a Kalman Filter to smooth out and detect outliers.
 
+### Model Weights 
+There are 5 different model weights that can be downloaded with the provided `eagle/models/get_weights.sh` script. For the YOLO detectors, both standard PyTorch and ONNX formats are provided. By default, the PyTorch formats are used. If you are using Eagle in CPU-only environments, refer to this [guide](https://docs.ultralytics.com/integrations/onnx/#usage) on how to use the ONNX formats together with YOLO. If CPU is detected, Eagle will default to the Medium Detector Model. 
+- `keypoints_main.pth`: The HRNet Backbone Keypoint detector model. 
+- `detector_medium`: The medium sized YOLOv8 model. It is trained on image size 640 and has faster inference speed.
+- `detector_large`: The large sized YOLOv8 model. It is trained exactly the same as `detector_medium` but with a higher parameter count.
+- `detector_large_hd`: It is trained on image size 960. The increased resolution results in improved performance and especially for the ball detection, its recall is much higher. However, it has a much slower inference speed. This is the default
+
+Depending on the hardware you have available and your use-case, different model sizes might suit your needs differently. 
+
+Eagle also defaults to [BoTSORT](https://arxiv.org/pdf/2206.14651.pdf) for tracking. Refer to [this repo](https://github.com/mikel-brostrom/yolo_tracking) for more details.
 
 ## Output Explanation 
 Outputs are stored in `output/(your video name)/`. All transformed coordinates use the UEFA pitch specifications (105 x 68). For detailed breakdown of the coordinate system, see `eagle/utils/pitch.py`.
@@ -67,7 +78,7 @@ Outputs are stored in `output/(your video name)/`. All transformed coordinates u
 
 
 ## Future Improvements
-The quality of the model as well as additional features (such as ReID) can make Eagle stronger and more robust. Any contribution to Eagle is deeply appreciated! 
+With more compute resources and more data, it would be possible to train better models at even higher resolution. Additional features are also in the works such as ReID and better team assignment which can make Eagle stronger and more robust. Any contribution to Eagle is deeply appreciated! 
 
 Feel free to use the trained models for your own custom usecases.
 
@@ -79,3 +90,7 @@ Huge acknowledgements goes to the following projects that have helped the develo
 - The [Soccernet](https://github.com/SoccerNet) team for the data they have provided
 - The [winning team](https://github.com/NikolasEnt/soccernet-calibration-sportlight) from the Soccernet Camera Calibration Challenge 2023
 - An easy way to use Trackers by [mikel-brostrom](https://github.com/mikel-brostrom/yolo_tracking)
+
+
+
+# if from inspection the ball detections are not good, we can filter them

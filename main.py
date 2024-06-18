@@ -31,7 +31,7 @@ def main():
 
     print("Processing Data")
 
-    processor = Processor(coordinates, frames, fps)
+    processor = Processor(coordinates, frames, fps, filter_ball_detections=True)
     df, team_mapping = processor.process_data(smooth=False)
     df.to_json(f"{root}/raw_data.json", orient="records")
     with open(f"{root}/metadata.json", "w") as f:

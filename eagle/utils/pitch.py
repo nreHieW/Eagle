@@ -285,17 +285,18 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Exact points per uefa rules
-    pitch = Pitch(pitch_type="uefa")
+    pitch = Pitch(pitch_type="uefa", linewidth=0.8, pitch_color="black")
     fig, ax = pitch.draw()
+    fig.set_facecolor("black")
     for point in GROUND_TRUTH_POINTS:
         x, y, z = GROUND_TRUTH_POINTS[point]
-        ax.plot(x, y, "ro")
+        ax.scatter(x, y, color="white")
 
-    # Normalized points fore 100x100 opta coordinates (a little bit off)
+    # Normalized points for 100x100 opta coordinates (a little bit off)
     # pitch = Pitch(pitch_type="opta")
     # fig, ax = pitch.draw()
     # for point in GROUND_TRUTH_POINTS_NORMALIZED:
     #     x, y, z = GROUND_TRUTH_POINTS_NORMALIZED[point]
     #     ax.plot(x, y, "ro")
-
+    # plt.savefig("pitch.png", dpi=300)
     plt.show()
