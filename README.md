@@ -37,7 +37,7 @@ An inference script is provided. First, obtain a clip of the broadcast data that
 ```bash
 ffmpeg -ss 00:00:07 -to 00:00:15 -i video.mp4 -c copy input_video.mp4
 ```
-Then run. You can also change the FPS depending on the granularity required using the `--fps` argument.
+Then run the following. You can also change the FPS depending on the granularity required using the `--fps` argument.
 ```bash
 python main.py --video_path input_video.mp4 # Replace with your video name
 ```
@@ -46,15 +46,15 @@ The output data can be found in `output/(input_video)/`. For a detailed descript
 ## Advanced Usage 
 Eagle works best in CUDA enabled GPU environments or at the very least with [Apple Metal](https://developer.apple.com/metal/pytorch/). If you do not have access to such resources, feel free to use the [Google Colab provided](https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU). There are different variants of models provided - both [PyTorch](https://pytorch.org/) and [ONNX](https://onnx.ai/) formats as well as different sizes of the detector model. Feel free to choose the relevant format/sizes for your hardware requirements. Feel free to change the Tracker model used as well.
 
-The Homography Calculation and Keypoint detection are pretty computationally expensive operations. If you have the compute requirements, feel free to invoke them more often as it might lead to more accurate results. They are controlled by the `num_homography` and `num_keypoint_detection` parameter which determine the number of times these operations are carried out per second respectively. 
+The Homography Calculation and Keypoint detection are pretty computationally expensive operations. If you have the compute requirements, feel free to invoke them more often as it might lead to more accurate results. They are controlled by the `num_homography` and `num_keypoint_detection` parameter which determine the number of times each of the operations are carried out per second respectively. 
 
 ### Capabilities
 Given that Eagle was trained on consumer hardware, it is not 100% accurate especially when dealing with irregular camera angles or heavy occlusion of players and frames. While wider camera angles such as those used in scouting feeds are preferred, Eagle is trained on standard broadcast data so it would work just fine. While many attempts and heuristics are in place to handle the inaccuracies, it is still highly recommended to use `annotated.mp4` to determine if there are any errors in the output before using the data provided. 
 
 Some common debugging strategies:
-- The most common issue is incorrect team assignment. Team assignment is currently done purely based on heuristics. The solution is simply to edit the team mapping dictionary in the metadata.
+- The most common issue is incorrect team assignment. Team assignment is currently done purely based on heuristics. The solution is to simply manually edit the team mapping dictionary in the metadata.
 - The second most common issue is when balls are not detected (given their size). This could cause erratic ball coordinates since Eagle interpolates the coordinates. One solution is to reduce the confidence threshold required for the detector (`detector_conf`).
-- A homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`)
+- A homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`).
 - Lastly, if the ball detections are extremely inaccurate, one solution is to increase the input resolution to get higher recall. If the model is detecting many objects as ball, set `filter_ball_detections=True` for the processor which will attempt to use a Kalman Filter to smooth out and detect outliers.
 
 ### Model Weights 
@@ -62,7 +62,7 @@ There are 5 different model weights that can be downloaded with the provided `ea
 - `keypoints_main.pth`: The HRNet Backbone Keypoint detector model. 
 - `detector_medium`: The medium sized YOLOv8 model. It is trained on image size 640 and has faster inference speed.
 - `detector_large`: The large sized YOLOv8 model. It is trained exactly the same as `detector_medium` but with a higher parameter count.
-- `detector_large_hd`: It is trained on image size 960. The increased resolution results in improved performance and especially for the ball detection, its recall is much higher. However, it has a much slower inference speed. This is the default
+- `detector_large_hd`: A large sized YOLOv8 model trained on image size 960. The increased resolution results in improved performance and especially for the ball detection, its recall is much higher. However, it has a much slower inference speed. This is the default.
 
 Depending on the hardware you have available and your use-case, different model sizes might suit your needs differently. 
 
@@ -73,7 +73,7 @@ Outputs are stored in `output/(your video name)/`. All transformed coordinates u
 
 1. **Metadata:** `metadata.json` contains the frames per second that Eagle used when processing the data and the team mapping of all the player ids detected in the video. 
 2. **Debug Info:** Eagle automatically creates an annotated copy of the video provided to allow for quick mapping of player id to names and quick detection of any inaccuracies.
-3. **Raw Data**: There are 2 raw data files provided. `raw_coordinates.json` is the detections and coordinates determined by the various models. `raw_data.json` is a pandas dataframe (read with `pd.read_json()`) which contains the `x,y` coordinates of the visible areas in that frame, players and ball for each frame in the video. `None` values indicate that nothing was detected for that particular id at that particular frame 
+3. **Raw Data**: There are 2 raw data files provided. `raw_coordinates.json` is the detections and coordinates determined by the various models. `raw_data.json` is a pandas dataframe (read with `pd.read_json()`) which contains the `x,y` coordinates of the visible areas in that frame, players and ball for each frame in the video. `None` values indicate that nothing was detected for that particular id at that particular frame.
 4. **Cleaned Data**: It is recommended to use `processed_data.json` for most use cases, similarly read as a pandas dataframe. It is modelled after [Statsbomb 360](https://github.com/statsbomb/open-data) and contains 3 columns: the visible areas in that frame, the coordinates from the video, and the transformed coordinates for each frame. Each coordinate value is a list of json objects with the type of object (Ball, Player or Goalkeeper), the coordinates and the team (for Player) identified in that particular freeze frame.
 
 
@@ -90,7 +90,3 @@ Huge acknowledgements goes to the following projects that have helped the develo
 - The [Soccernet](https://github.com/SoccerNet) team for the data they have provided
 - The [winning team](https://github.com/NikolasEnt/soccernet-calibration-sportlight) from the Soccernet Camera Calibration Challenge 2023
 - An easy way to use Trackers by [mikel-brostrom](https://github.com/mikel-brostrom/yolo_tracking)
-
-
-
-# if from inspection the ball detections are not good, we can filter them
