@@ -31,7 +31,7 @@ def main():
 
     print("Processing Data")
 
-    processor = Processor(coordinates, frames, fps, filter_ball_detections=True)
+    processor = Processor(coordinates, frames, fps, filter_ball_detections=False)
     df, team_mapping = processor.process_data(smooth=False)
     df.to_json(f"{root}/raw_data.json", orient="records")
     with open(f"{root}/metadata.json", "w") as f:
@@ -71,6 +71,10 @@ def main():
 
                 cv2.ellipse(curr_frame, (int(x), int(y)), (35, 18), 0, -45, 235, color, 1)
                 cv2.putText(curr_frame, str(id), (int(x) - 3, int(y)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+
+        kp = coordinates[i]["Keypoints"]
+        for x in kp.values():
+            cv2.circle(curr_frame, (int(x[0]), int(x[1])), 6, (0, 0, 0), -1)
 
         out.append(curr_frame)
 

@@ -13,6 +13,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from boxmot import DeepOCSORT, BoTSORT
 from pathlib import Path
+from collections import Counter
 
 PITCH_WIDTH = 105
 PITCH_HEIGHT = 68
@@ -149,17 +150,18 @@ class CoordinateModel:
                 world_pts = np.array([GROUND_TRUTH_POINTS[point] for point in keypoints], dtype=np.float32)
                 if len(img_pts) < 4:
                     compute_homography = True
-                    pass
-                for method in [cv2.RANSAC, cv2.RHO]:
-                    new_homography_matrix, mask = cv2.findHomography(img_pts, world_pts, method, 5.0 if method is cv2.RANSAC else None)
-                    if new_homography_matrix is not None:
-                        break  # Exit the loop if a homography is found
-                if new_homography_matrix is not None:
-                    prev_keypoints = {k: v for k, v, m in zip(prev_keypoints.keys(), prev_keypoints.values(), mask.flatten()) if m}  # Filter out outliers
-                    homography_matrix = new_homography_matrix
-                    compute_homography = False
+                    # raise ValueError("Not enough keypoints detected to compute homography matrix")
                 else:
-                    compute_homography = True  # For this frame, use the previous homography matrix but compute a new one next frame
+                    for method in [cv2.RANSAC, cv2.RHO, cv2.LMEDS]:
+                        new_homography_matrix, mask = cv2.findHomography(img_pts, world_pts, method, 5.0 if method is cv2.RANSAC else None)
+                        if new_homography_matrix is not None:
+                            break  # Exit the loop if a homography is found
+                    if new_homography_matrix is not None:
+                        prev_keypoints = {k: v for k, v, m in zip(prev_keypoints.keys(), prev_keypoints.values(), mask.flatten()) if m}  # Filter out outliers
+                        homography_matrix = new_homography_matrix
+                        compute_homography = False
+                    else:
+                        compute_homography = True  # For this frame, use the previous homography matrix but compute a new one next frame
 
             indiv = {}  # Coordinate information at this current frame
             for class_name, class_dict in objects.items():
@@ -262,13 +264,31 @@ class CoordinateModel:
         height, width, _ = frame.shape
         frame = self.transforms(image=frame)["image"].to(self.keypoint_model.unnormalized_model[1].weight.data.device).float().unsqueeze(0)
         keypoints = self.keypoint_model.get_keypoints(frame)[0]
-        res = {}
+        # res = {}
+        # for i, x, y, score in keypoints:
+        #     if score < self.keypoint_conf:
+        #         continue
+        #     label = INTERSECTION_TO_PITCH_POINTS[i]
+        #     res[label] = (int(x * width), int(y * height))
+
+        tmp = {}
         for i, x, y, score in keypoints:
             if score < self.keypoint_conf:
                 continue
             label = INTERSECTION_TO_PITCH_POINTS[i]
-            res[label] = (int(x * width), int(y * height))
-
+            tmp[label] = (int(x * width), int(y * height), score, i)
+        vals = list(tmp.values())
+        coords = [x[:2] for x in vals]
+        counts = Counter(coords)
+        coords_to_label = {}
+        # if multiple keypoints are assigned to the same point choose the highest scoring one
+        for k, v in tmp.items():
+            if counts[v[:2]] == 1:
+                coords_to_label[v[:2]] = k
+            else:
+                if v[2] == max([x[2] for x in vals if x[:2] == v[:2]]):
+                    coords_to_label[v[:2]] = k
+        res = {coords_to_label[k]: k for k in coords_to_label}
         return res
 
     def calibrate_keypoints(self, frame: np.ndarray, keypoints: dict):

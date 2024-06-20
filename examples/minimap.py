@@ -16,6 +16,7 @@ with open("../output/input_video/metadata.json") as f:
     metadata = json.load(f)
 fps = metadata["fps"]
 team_mapping = metadata["team_mapping"]
+team_mapping["19"] = 0
 
 to_draw = [x for x in df.columns if "video" not in x and x not in ["Bottom_Left", "Top_Left", "Top_Right", "Bottom_Right"]]
 pitch = Pitch(pitch_type="uefa", pitch_color="None", goal_type="box")
@@ -46,10 +47,10 @@ for i, row in df.iterrows():
                 if str(id) not in team_mapping:  # use string because json keys are always strings
                     continue
                 team = team_mapping[str(id)]
-                if team == 0:
-                    color = "red"
+                if team == 1:
+                    color = "#43A1D5"
                 else:
-                    color = "blue"
+                    color = "#F36C21"
 
             ax.scatter(x, y, color=color, zorder=5, s=100)
 
