@@ -24,31 +24,25 @@ Eagle can be used to create a variety of visualisations and metrics. Here are so
 ### Voronoi Diagram 
 Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under `voronoi.py`. The example here is from Manchester City's goal against Nottingham Forest.
 
-<div style="display: flex; justify-content: space-between;">
-  <video width="48%" autoplay loop muted>
-    <source src="examples/clips/mancity.mp4" type="video/mp4">
-  </video>
-  <img src="assets/voronoi.png" style="width: 48%;">
+<div align="center">
+  <img src="assets/mancity.gif" width="48%" alt="Manchester City vs Nottingham Forest"/>
+  <img src="assets/voronoi.png" width="48%" alt="Voronoi Diagram"/>
 </div>
 
 ### Pass Plot
 Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under `pass.py`. The example here is Lamine Yamal's assist during the Euros.
 
-<div style="display: flex; justify-content: space-between;">
-  <video width="48%" autoplay loop muted>
-    <source src="examples/clips/lamine_yamal.mp4" type="video/mp4">
-  </video>
-  <img src="assets/pass.png" style="width: 48%;">
+<div align="center">
+  <img src="assets/lamine_yamal.gif" width="48%" alt="Lamine Yamal assist during Euros"/>
+  <img src="assets/pass.png" width="48%" alt="Pass Trajectory Plot"/>
 </div>
 
 ### Player Trajectory
 Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under `trajectory.py`. The example here is Lionel Messi's goal against Athletic Bilbao.
 
-<div style="display: flex; justify-content: space-between;">
-  <video width="48%" autoplay loop muted>
-    <source src="examples/clips/messi.mp4" type="video/mp4">
-  </video>
-  <img src="assets/trajectory.png" style="width: 48%;">
+<div align="center">
+  <img src="assets/messi.gif" width="48%" alt="Lionel Messi goal vs Athletic Bilbao"/>
+  <img src="assets/trajectory.png" width="48%" alt="Player Trajectory Visualization"/>
 </div>
 
 ## Usage 
@@ -125,13 +119,9 @@ Some common debugging strategies:
 - It is also recommended to ensure that your clip is trimmed to the relevant part of the game.
 
 An example of the above is shown below. The ball and player coordinates are generally accurate but the ball detections aren't 100% accurate.
-<div style="display: flex; justify-content: space-between;">
-  <video width="48%" autoplay loop muted>
-    <source src="examples/clips/spurs.mp4" type="video/mp4">
-  </video>
-  <video width="48%" autoplay loop muted>
-    <source src="assets/spurs_minimap.mp4" type="video/mp4">
-  </video>
+<div align="center">
+  <img src="assets/spurs.gif" width="48%" alt="Spurs match example"/>
+  <img src="assets/spurs_minimap.gif" width="48%" alt="Generated minimap"/>
 </div>
 
 ## Output Explanation 
