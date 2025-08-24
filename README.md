@@ -25,24 +25,24 @@ Eagle can be used to create a variety of visualisations and metrics. Here are so
 Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under `voronoi.py`. The example here is from Manchester City's goal against Nottingham Forest.
 
 <div align="center">
-  <img src="assets/mancity.gif" width="48%" alt="Manchester City vs Nottingham Forest"/>
-  <img src="assets/voronoi.png" width="48%" alt="Voronoi Diagram"/>
+  <img src="assets/mancity.gif" width="48%" alt="Manchester City vs Nottingham Forest" style="vertical-align: middle;"/>
+  <img src="assets/voronoi.png" width="48%" alt="Voronoi Diagram" style="vertical-align: middle;"/>
 </div>
 
 ### Pass Plot
 Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under `pass.py`. The example here is Lamine Yamal's assist during the Euros.
 
 <div align="center">
-  <img src="assets/lamine_yamal.gif" width="48%" alt="Lamine Yamal assist during Euros"/>
-  <img src="assets/pass.png" width="48%" alt="Pass Trajectory Plot"/>
+  <img src="assets/lamine_yamal.gif" width="48%" alt="Lamine Yamal assist during Euros" style="vertical-align: middle;"/>
+  <img src="assets/pass.png" width="48%" alt="Pass Trajectory Plot" style="vertical-align: middle;"/>
 </div>
 
 ### Player Trajectory
 Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under `trajectory.py`. The example here is Lionel Messi's goal against Athletic Bilbao.
 
 <div align="center">
-  <img src="assets/messi.gif" width="48%" alt="Lionel Messi goal vs Athletic Bilbao"/>
-  <img src="assets/trajectory.png" width="48%" alt="Player Trajectory Visualization"/>
+  <img src="assets/messi.gif" width="48%" alt="Lionel Messi goal vs Athletic Bilbao" style="vertical-align: middle;"/>
+  <img src="assets/trajectory.png" width="48%" alt="Player Trajectory Visualization" style="vertical-align: middle;"/>
 </div>
 
 ## Usage 
@@ -120,8 +120,8 @@ Some common debugging strategies:
 
 An example of the above is shown below. The ball and player coordinates are generally accurate but the ball detections aren't 100% accurate.
 <div align="center">
-  <img src="assets/spurs.gif" width="48%" alt="Spurs match example"/>
-  <img src="assets/spurs_minimap.gif" width="48%" alt="Generated minimap"/>
+  <img src="assets/spurs.gif" width="48%" alt="Spurs match example" style="vertical-align: middle;"/>
+  <img src="assets/spurs_minimap.gif" width="48%" alt="Generated minimap" style="vertical-align: middle;"/>
 </div>
 
 ## Output Explanation 
