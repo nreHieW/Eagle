@@ -57,7 +57,7 @@ Eagle can be used to visualize the movement of a player over time. This can be u
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-It is recommended to use Eagle in the provided Google Colab notebook. It is a self-contained environment that allows you to run Eagle without having to install any dependencies. You can also use the provided <a href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU" target="_blank">notebook</a> to run Eagle on your own data.
+It is recommended to use Eagle in the provided Google Colab notebook especially if you are not familiar with Python or you don't have a GPU. A GPU is highly recommended for faster inference. It is a self-contained environment that allows you to run Eagle without having to install any dependencies. You can also use the provided <a href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU" target="_blank">notebook</a> to run Eagle on your own data.
 
 You will need to upload your video and follow the instructions in the notebook. 
 
