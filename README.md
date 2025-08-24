@@ -88,7 +88,7 @@ Then run the following. You can also change the FPS depending on the granularity
 ```bash
 uv run main.py --video_path input_video.mp4 # Replace with your video name
 ```
-The output data can be found in `output/(input_video)/`. For a detailed description of the output data format refer to [the section below](#output-explanation).
+The output data can be found in `output/(input_video)/`. For a detailed description of the output data format refer to [the documentation](docs/data.md).
 
 ## Advanced Usage 
 Eagle works best in CUDA enabled GPU environments or at the very least with [Apple Metal](https://developer.apple.com/metal/pytorch/). If you do not have access to such resources, feel free to use the <a href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU" target="_blank">Google Colab provided</a>. There are different variants of models provided - both [PyTorch](https://pytorch.org/) and [ONNX](https://onnx.ai/) formats as well as different sizes of the detector model. Feel free to choose the relevant format/sizes for your hardware requirements. Feel free to change the Tracker model used as well.
