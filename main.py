@@ -79,6 +79,7 @@ def main():
         out.append(curr_frame)
 
     write_video(out, f"{root}/annotated.mp4", fps)
+    print("Data saved to", root)
 
 
 if __name__ == "__main__":

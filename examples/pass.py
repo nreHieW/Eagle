@@ -5,17 +5,23 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
+import argparse
 
 sys.path.append("../")
 from eagle.utils.io import read_video
 
 
-frames, fps = read_video("lamine_yamal.mp4")
-with open("output/lamine_yamal/raw_coordinates.json", "r") as f:
+parser = argparse.ArgumentParser()
+parser.add_argument("--input_dir", type=str, required=True)  # "../output/lamine_yamal"
+parser.add_argument("--video_path", type=str, required=True)  # "clips/lamine_yamal.mp4"
+args = parser.parse_args()
+
+frames, fps = read_video(args.video_path)
+with open(f"{args.input_dir}/raw_coordinates.json", "r") as f:
     coords = json.load(f)
 
-df = pd.read_json("output/lamine_yamal/processed_data.json").fillna(np.nan)
-with open("output/lamine_yamal/metadata.json", "r") as f:
+df = pd.read_json(f"{args.input_dir}/processed_data.json").fillna(np.nan)
+with open(f"{args.input_dir}/metadata.json", "r") as f:
     team_mapping = json.load(f)["team_mapping"]
 
 pitch = Pitch(pitch_type="uefa", pitch_color="None", goal_type="box", linewidth=0.8)
@@ -58,4 +64,5 @@ for item in coords:
 
 ax.arrow(start[0], start[1], end[0] - start[0], end[1] - start[1], head_width=1, head_length=1, fc="white", ec="white", zorder=5)
 
-plt.show()
+plt.savefig("pass.png")
+print("Saved pass.png")

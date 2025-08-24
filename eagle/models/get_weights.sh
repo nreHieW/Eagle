@@ -1,2 +1,2 @@
-gdown 1C2QiWOcUMq1gkamDtsYIB-rpXflqlZKZ
+gdown 1rTArr_3eO35Ynea2HXqPYOxDdkDYLfMI
 unzip weights.zip

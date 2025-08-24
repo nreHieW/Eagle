@@ -2,13 +2,12 @@
 
 <div align="center">
   <p>
-  <img src="demo.gif" width="640" height="400"/>
+  <img src="assets/demo.gif" width="640" height="400"/>
   </p>
   <div>
 <a target="_blank" href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
-
   </div>
   <br>
 </div>
@@ -16,22 +15,70 @@
 ## Introduction 
 Eagle converts football broadcast data from television feeds to tracking data useful for analysis and visualisation. It uses a collection of custom trained models and a variety of computer vision techniques to identify, track and obtain player and ball coordinates from each frame of broadcast data.
 
-## Installation
-Eagle works best with Python > 3.8 environments. 
+Unlike other solutions, Eagle is designed to work **directly on broadcast data** and does not require special scouting feeds or angles. It can read and process clips directly from matches. The GIF above is an example of how Eagle can generalize to all sorts of camera angles. 
+
+For more information on Eagle, refer to the [documentation](docs/algorithm.md).
+
+## Example Use Cases 
+Eagle can be used to create a variety of visualisations and metrics. Here are some (non exhaustive) examples beyond creating the Minimap from the GIF above.
+### Voronoi Diagram 
+Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under `voronoi.py`. The example here is from Manchester City's goal against Nottingham Forest.
+
+<div style="display: flex; justify-content: space-between;">
+  <video width="48%" autoplay loop muted>
+    <source src="examples/clips/mancity.mp4" type="video/mp4">
+  </video>
+  <img src="assets/voronoi.png" style="width: 48%;">
+</div>
+
+### Pass Plot
+Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under `pass.py`. The example here is Lamine Yamal's assist during the Euros.
+
+<div style="display: flex; justify-content: space-between;">
+  <video width="48%" autoplay loop muted>
+    <source src="examples/clips/lamine_yamal.mp4" type="video/mp4">
+  </video>
+  <img src="assets/pass.png" style="width: 48%;">
+</div>
+
+### Player Trajectory
+Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under `trajectory.py`. The example here is Lionel Messi's goal against Athletic Bilbao.
+
+<div style="display: flex; justify-content: space-between;">
+  <video width="48%" autoplay loop muted>
+    <source src="examples/clips/messi.mp4" type="video/mp4">
+  </video>
+  <img src="assets/trajectory.png" style="width: 48%;">
+</div>
+
+## Usage 
+### Colab Usage (Recommended)
+<a target="_blank" href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU">
+  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+</a>
+
+It is recommended to use Eagle in the provided Google Colab notebook. It is a self-contained environment that allows you to run Eagle without having to install any dependencies. You can also use the provided [notebook](https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU) to run Eagle on your own data.
+
+You will need to upload your video and follow the instructions in the notebook. 
+
+### Local Usage
+If you want to run Eagle locally, first install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then, clone the repository
 ```bash
 git clone https://github.com/nreHieW/Eagle.git
 cd Eagle
-pip install -r requirements.txt
 ```
 
-Next, you will need to download the weights of the models. 
+Finally, you will need to download the weights of the models. 
 ```bash
 cd eagle/models
 sh get_weights.sh
 cd ../../
 ```
-
-## Basic Usage 
 An inference script is provided. First, obtain a clip of the broadcast data that you want to use as an `.mp4` file. Eagle works best in clips where the camera position is relatively stable (ie no changes in angle). You can use [FFmpeg](https://ffmpeg.org/) to trim as necessary using the following example.
 
 ```bash
@@ -39,7 +86,7 @@ ffmpeg -ss 00:00:07 -to 00:00:15 -i video.mp4 -c copy input_video.mp4
 ```
 Then run the following. You can also change the FPS depending on the granularity required using the `--fps` argument.
 ```bash
-python main.py --video_path input_video.mp4 # Replace with your video name
+uv run main.py --video_path input_video.mp4 # Replace with your video name
 ```
 The output data can be found in `output/(input_video)/`. For a detailed description of the output data format refer to [the section below](#output-explanation).
 
@@ -48,14 +95,13 @@ Eagle works best in CUDA enabled GPU environments or at the very least with [App
 
 The Homography Calculation and Keypoint detection are pretty computationally expensive operations. If you have the compute requirements, feel free to invoke them more often as it might lead to more accurate results. They are controlled by the `num_homography` and `num_keypoint_detection` parameter which determine the number of times each of the operations are carried out per second respectively. 
 
-### Capabilities
-Given that Eagle was trained on consumer hardware, it is not 100% accurate especially when dealing with irregular camera angles or heavy occlusion of players and frames. While wider camera angles such as those used in scouting feeds are preferred, Eagle is trained on standard broadcast data so it would work just fine. While many attempts and heuristics are in place to handle the inaccuracies, it is still highly recommended to use `annotated.mp4` to determine if there are any errors in the output before using the data provided. 
+##### Parameters
+- `keypoint_conf` (default 0.3): HRNet keypoint minimum score.
+- `detector_conf` (default 0.35): YOLO minimum confidence; a lower internal floor (0.15) is used to feed the tracker robustly.
+- `num_homography`: homography recomputations per second (>=1 recommended).
+- `num_keypoint_detection`: HRNet inferences per second (increase for accuracy; decrease for speed).
+- `calibration`: enable brightness-based micro-adjustment of keypoint pixels.
 
-Some common debugging strategies:
-- The most common issue is incorrect team assignment. Team assignment is currently done purely based on heuristics. The solution is to simply manually edit the team mapping dictionary in the metadata.
-- The second most common issue is when balls are not detected (given their size). This could cause erratic ball coordinates since Eagle interpolates the coordinates. One solution is to reduce the confidence threshold required for the detector (`detector_conf`).
-- A homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`).
-- Lastly, if the ball detections are extremely inaccurate, one solution is to increase the input resolution to get higher recall. If the model is detecting many objects as ball, set `filter_ball_detections=True` for the processor which will attempt to use a Kalman Filter to smooth out and detect outliers.
 
 ### Model Weights 
 There are 5 different model weights that can be downloaded with the provided `eagle/models/get_weights.sh` script. For the YOLO detectors, both standard PyTorch and ONNX formats are provided. By default, the PyTorch formats are used. If you are using Eagle in CPU-only environments, refer to this [guide](https://docs.ultralytics.com/integrations/onnx/#usage) on how to use the ONNX formats together with YOLO. If CPU is detected, Eagle will default to the Medium Detector Model. 
@@ -68,19 +114,33 @@ Depending on the hardware you have available and your use-case, different model 
 
 Eagle also defaults to [BoTSORT](https://arxiv.org/pdf/2206.14651.pdf) for tracking. Refer to [this repo](https://github.com/mikel-brostrom/yolo_tracking) for more details.
 
+### Limitations
+Given that Eagle was trained on consumer hardware, it is not 100% accurate especially when dealing with irregular camera angles or heavy occlusion of players and frames. While wider camera angles such as those used in scouting feeds are preferred, Eagle is trained on standard broadcast data so it would work just fine. While many attempts and heuristics are in place to handle the inaccuracies, it is still highly recommended to use `annotated.mp4` to determine if there are any errors in the output before using the data provided. 
+
+Some common debugging strategies:
+- The most common issue is incorrect team assignment. Team assignment is currently done purely based on heuristics. The solution is to simply manually edit the team mapping dictionary in the metadata.
+- Eagle is generally able to track player positions well but the second most common issue is when balls are not detected (given their size). This could cause erratic ball coordinates since Eagle interpolates the coordinates. One solution is to reduce the confidence threshold required for the detector (`detector_conf`).
+- A homography requires 4 points at minimum. Some camera angles makes this difficult. One solution is to reduce the confidence threshold for the keypoint detector (`keypoint_conf`).
+- Lastly, if the ball detections are extremely inaccurate, one solution is to increase the input resolution to get higher recall. If the model is detecting many objects as ball, set `filter_ball_detections=True` for the processor which will attempt to use a Kalman Filter to smooth out and detect outliers.
+- It is also recommended to ensure that your clip is trimmed to the relevant part of the game.
+
+An example of the above is shown below. The ball and player coordinates are generally accurate but the ball detections aren't 100% accurate.
+<div style="display: flex; justify-content: space-between;">
+  <video width="48%" autoplay loop muted>
+    <source src="examples/clips/spurs.mp4" type="video/mp4">
+  </video>
+  <video width="48%" autoplay loop muted>
+    <source src="assets/spurs_minimap.mp4" type="video/mp4">
+  </video>
+</div>
+
 ## Output Explanation 
-Outputs are stored in `output/(your video name)/`. All transformed coordinates use the UEFA pitch specifications (105 x 68). For detailed breakdown of the coordinate system, see `eagle/utils/pitch.py`.
-
-1. **Metadata:** `metadata.json` contains the frames per second that Eagle used when processing the data and the team mapping of all the player ids detected in the video. 
-2. **Debug Info:** Eagle automatically creates an annotated copy of the video provided to allow for quick mapping of player id to names and quick detection of any inaccuracies.
-3. **Raw Data**: There are 2 raw data files provided. `raw_coordinates.json` is the detections and coordinates determined by the various models. `raw_data.json` is a pandas dataframe (read with `pd.read_json()`) which contains the `x,y` coordinates of the visible areas in that frame, players and ball for each frame in the video. `None` values indicate that nothing was detected for that particular id at that particular frame.
-4. **Cleaned Data**: It is recommended to use `processed_data.json` for most use cases, similarly read as a pandas dataframe. It is modelled after [Statsbomb 360](https://github.com/statsbomb/open-data) and contains 3 columns: the visible areas in that frame, the coordinates from the video, and the transformed coordinates for each frame. Each coordinate value is a list of json objects with the type of object (Ball, Player or Goalkeeper), the coordinates and the team (for Player) identified in that particular freeze frame.
-
+Outputs are stored in `output/(your video name)/`. All transformed coordinates use the UEFA pitch specifications (105 x 68). For detailed breakdown of the coordinate system and data output, see [this file](docs/data.md).
 
 ## Future Improvements
-With more compute resources and more data, it would be possible to train better models at even higher resolution. Additional features are also in the works such as ReID and better team assignment which can make Eagle stronger and more robust. Any contribution to Eagle is deeply appreciated! 
+With more compute resources and more data, it would be possible to train better models at even higher resolution. Additional features are also in the works such as ReID and better team assignment which can make Eagle stronger and more robust as well as making the entire pipeline faster. Any contribution to Eagle is deeply appreciated! 
 
-Feel free to use the trained models for your own custom usecases.
+If you found Eagle to be useful, please consider citing it in your work. Also, please do reach out to me if you have any suggestions or feedback!
 
 ## Acknowledgements
 Huge acknowledgements goes to the following projects that have helped the development of Eagle tremendously:

@@ -6,15 +6,21 @@ import numpy as np
 from mplsoccer import Pitch
 import matplotlib.pyplot as plt
 import sys
+import argparse
 
 sys.path.append("../")
 from eagle.utils.io import read_video
 
-frames, fps = read_video("messi.mp4")
-with open("output/messi/raw_coordinates.json", "r") as f:
+parser = argparse.ArgumentParser()
+parser.add_argument("--input_dir", type=str, required=True)  # "../output/messi"
+parser.add_argument("--video_path", type=str, required=True)  # "messi.mp4"
+args = parser.parse_args()
+
+frames, fps = read_video(args.video_path)
+with open(f"{args.input_dir}/raw_coordinates.json", "r") as f:
     coords = json.load(f)
 
-df = pd.read_json("output/messi/processed_data.json").fillna(np.nan)
+df = pd.read_json(f"{args.input_dir}/processed_data.json").fillna(np.nan)
 pitch = Pitch(pitch_type="uefa", pitch_color="None", goal_type="box", linewidth=0.8)
 fig, ax = pitch.draw()
 fig.set_facecolor("black")
@@ -30,3 +36,5 @@ ax.plot([x[0] for x in ball_coords], [x[1] for x in ball_coords], color="white",
 
 ax.scatter(ball_coords[0][0], ball_coords[0][1], color="blue", zorder=5, s=50)
 ax.scatter(ball_coords[-1][0], ball_coords[-1][1], color="blue", zorder=5, s=50)
+plt.savefig("trajectory.png")
+print("Saved trajectory.png")

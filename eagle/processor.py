@@ -28,31 +28,36 @@ def calculate_distance(pt1, pt2):
 
 
 def interpolate_df(df, col_name: str, fill: bool = False):
-    col_x = f"{col_name}_x"
-    col_y = f"{col_name}_y"
-    if fill:
-        df[col_x] = df[col_name].apply(lambda x: x[0] if x is not np.NaN else np.NaN).interpolate(method="linear").bfill().ffill()
-        df[col_y] = df[col_name].apply(lambda x: x[1] if x is not np.NaN else np.NaN).interpolate(method="linear").bfill().ffill()
-    else:
-        df[col_x] = df[col_name].apply(lambda x: x[0] if x is not np.NaN else np.NaN).interpolate(method="linear", limit_area="inside")
-        df[col_y] = df[col_name].apply(lambda x: x[1] if x is not np.NaN else np.NaN).interpolate(method="linear", limit_area="inside")
-    df[col_name] = df[[col_x, col_y]].apply(lambda x: (x.iloc[0], x.iloc[1]) if not math.isnan(x.iloc[0]) or not math.isnan(x.iloc[1]) else np.NaN, axis=1)
+    # Work on temporary Series to avoid DataFrame fragmentation
+    s = df[col_name]
+    x = s.apply(lambda v: v[0] if isinstance(v, (list, tuple)) else np.nan)
+    y = s.apply(lambda v: v[1] if isinstance(v, (list, tuple)) else np.nan)
 
-    df = df.drop(columns=[col_x, col_y])
+    if fill:
+        x = x.interpolate(method="linear").bfill().ffill()
+        y = y.interpolate(method="linear").bfill().ffill()
+    else:
+        x = x.interpolate(method="linear", limit_area="inside")
+        y = y.interpolate(method="linear", limit_area="inside")
+
+    combined = pd.Series([(xi, yi) if not (math.isnan(xi) and math.isnan(yi)) else np.nan for xi, yi in zip(x, y)], index=s.index)
+    df[col_name] = combined
     return df
 
 
 def smooth_df(df, col_name: str):
-    col_x = f"{col_name}_x"
-    col_y = f"{col_name}_y"
-    df[col_x] = df[col_name].apply(lambda x: x[0] if x is not np.NaN else np.NaN)
-    df[col_y] = df[col_name].apply(lambda x: x[1] if x is not np.NaN else np.NaN)
-    df.loc[::2, col_x] = np.NaN
-    df.loc[::2, col_y] = np.NaN
-    df[col_x] = df[col_x].interpolate(method="linear", limit_area="inside")
-    df[col_y] = df[col_y].interpolate(method="linear", limit_area="inside")
-    df[col_name] = df[[col_x, col_y]].apply(lambda x: (x.iloc[0], x.iloc[1]) if not math.isnan(x.iloc[0]) or not math.isnan(x.iloc[1]) else np.NaN, axis=1)
-    df = df.drop(columns=[col_x, col_y])
+    # Work on temporary Series to avoid DataFrame fragmentation
+    s = df[col_name]
+    x = s.apply(lambda v: v[0] if isinstance(v, (list, tuple)) else np.nan)
+    y = s.apply(lambda v: v[1] if isinstance(v, (list, tuple)) else np.nan)
+
+    x.iloc[::2] = np.nan
+    y.iloc[::2] = np.nan
+    x = x.interpolate(method="linear", limit_area="inside")
+    y = y.interpolate(method="linear", limit_area="inside")
+
+    combined = pd.Series([(xi, yi) if not (math.isnan(xi) and math.isnan(yi)) else np.nan for xi, yi in zip(x, y)], index=s.index)
+    df[col_name] = combined
     return df
 
 
@@ -67,6 +72,8 @@ class Processor:
 
     def process_data(self, smooth: bool = False):
         df = self.create_dataframe()
+        if df.empty:
+            return df, {}
         df = interpolate_df(df, "Ball", fill=True)
         df = interpolate_df(df, "Ball_video", fill=True)
         team_mapping = self.get_team_mapping()
@@ -118,61 +125,81 @@ class Processor:
         return pd.DataFrame(out)
 
     def create_dataframe(self):
-        ball_coords_image = []
-        ball_coords = []
+        # We will compute ball positions across ALL frames for stability,
+        # but only keep frames that have at least one detected Player or Goalkeeper.
+        ball_coords_image_all = []
+        ball_coords_all = []
         out = {}
-        for frame_number in self.coords.keys():
+        kept_frame_numbers = []
+        frame_keys = list(self.coords.keys())
+
+        for frame_number in frame_keys:
             indiv = {}
-            boundaries = self.coords[frame_number]["Boundaries"]
+            curr = self.coords[frame_number]
+            boundaries = curr["Boundaries"]
             indiv["Bottom_Left"] = boundaries[0]
             indiv["Top_Left"] = boundaries[1]
             indiv["Top_Right"] = boundaries[2]
             indiv["Bottom_Right"] = boundaries[3]
+
+            has_person_detection = False
+            coordinates_dict = curr.get("Coordinates", {})
+
+            # Add Player and Goalkeeper detections if present
             for name in ["Player", "Goalkeeper"]:
-                if name not in self.coords[frame_number]["Coordinates"]:
+                if name not in coordinates_dict or len(coordinates_dict[name]) == 0:
                     continue
-                curr_coords = self.coords[frame_number]["Coordinates"][name]
+                curr_coords = coordinates_dict[name]
                 for id, item in curr_coords.items():
                     x1, y1, x2, y2 = item["BBox"]
-                    indiv[f"{name}_{id}"] = item["Transformed_Coordinates"]
+                    indiv[f"{name}_{id}"] = item.get("Transformed_Coordinates") if item.get("Transformed_Coordinates") else np.nan
                     indiv[f"{name}_{id}_video"] = ((x1 + x2) / 2, y2)
-            out[frame_number] = indiv
-            if "Ball" not in self.coords[frame_number]["Coordinates"]:
-                ball_coords.append(None)
-                ball_coords_image.append(None)
-                continue
-            curr_coords = self.coords[frame_number]["Coordinates"]["Ball"]
-            indiv_img = []
-            indiv_real = []
-            for id, item in curr_coords.items():
-                confidence = float(item["Confidence"])
-                transformed_coords = item["Transformed_Coordinates"]
-                x1, y1, x2, y2 = item["BBox"]
-                center = ((x1 + x2) / 2, y2)
-                if transformed_coords[0] < 0 or transformed_coords[0] > PITCH_WIDTH or transformed_coords[1] < 0 or transformed_coords[1] > PITCH_HEIGHT:
-                    continue
-                else:
+                    has_person_detection = True
+
+            # Ball candidates (computed for all frames)
+            if "Ball" in coordinates_dict and len(coordinates_dict["Ball"]) > 0:
+                curr_coords = coordinates_dict["Ball"]
+                indiv_img = []
+                indiv_real = []
+                for id, item in curr_coords.items():
+                    confidence = float(item["Confidence"])
+                    transformed_coords = item["Transformed_Coordinates"]
+                    x1, y1, x2, y2 = item["BBox"]
+                    center = ((x1 + x2) / 2, y2)
+                    if not transformed_coords:
+                        transformed_coords = center
                     indiv_real.append((transformed_coords, confidence))
                     indiv_img.append((center, confidence))
 
-            if len(indiv) == 0:
-                ball_coords.append(None)
-                ball_coords_image.append(None)
-                continue
-            indiv_img = sorted(indiv_img, key=lambda x: x[1], reverse=True)
-            indiv_real = sorted(indiv_real, key=lambda x: x[1], reverse=True)
-            ball_coords.append([x[0] for x in indiv_real])
-            ball_coords_image.append([x[0] for x in indiv_img])
+                indiv_img = sorted(indiv_img, key=lambda x: x[1], reverse=True)
+                indiv_real = sorted(indiv_real, key=lambda x: x[1], reverse=True)
+                ball_coords_all.append([x[0] for x in indiv_real])
+                ball_coords_image_all.append([x[0] for x in indiv_img])
+            else:
+                ball_coords_all.append(None)
+                ball_coords_image_all.append(None)
 
+            # Only keep frames with at least one player/goalkeeper detection
+            if has_person_detection:
+                out[frame_number] = indiv
+                kept_frame_numbers.append(frame_number)
+
+        # Compute final ball positions on the full timeline, then align to kept frames
         h, w, _ = self.frames[0].shape
-        final_ball_coords_img = self.parse_ball_detections_with_kalman(ball_coords_image, filter=self.filter_ball_detections, threshold=0.1 * w)
-        final_ball_coords = self.parse_ball_detections_with_kalman(ball_coords, filter=False)  # False here because we use the image coordinates to filter
-        # use the image coordinates fo filter
-        final_ball_coords = [final_ball_coords[i] if final_ball_coords_img[i] is not None else None for i in range(len(final_ball_coords_img))]
+        final_ball_coords_img_all = self.parse_ball_detections_with_kalman(ball_coords_image_all, filter=self.filter_ball_detections, threshold=0.1 * w)
+        final_ball_coords_all = self.parse_ball_detections_with_kalman(ball_coords_all, filter=False)
+        # Use image coordinates to filter real-world coordinates
+        final_ball_coords_all = [final_ball_coords_all[i] if final_ball_coords_img_all[i] is not None else None for i in range(len(final_ball_coords_img_all))]
+
         df = pd.DataFrame(out).T
-        df["Ball"] = [x if x is not None else np.nan for x in final_ball_coords]
-        df["Ball_video"] = [x if x is not None else np.nan for x in final_ball_coords_img]
-        df = df.loc[:, df.notna().sum() >= 0.01 * len(df)]  # Remove columns with less than 1% non-None values
+        if len(df) > 0:
+            # Align ball series to kept frame indices
+            ball_series_real = pd.Series([x if x is not None else np.nan for x in final_ball_coords_all], index=frame_keys)
+            ball_series_img = pd.Series([x if x is not None else np.nan for x in final_ball_coords_img_all], index=frame_keys)
+            df["Ball"] = ball_series_real.loc[df.index]
+            df["Ball_video"] = ball_series_img.loc[df.index]
+            # Remove columns with less than 1% non-None values
+            df = df.loc[:, df.notna().sum() >= 0.01 * len(df)]
         return df
 
     def merge_data(self, df, team_mapping):
@@ -215,7 +242,11 @@ class Processor:
                 last_valid_index_candidate = df[candidate].last_valid_index()
 
                 # If there is an overlap, ignore
-                if last_valid_index_col is not None and first_valid_index_candidate is not None and (last_valid_index_col >= first_valid_index_candidate or last_valid_index_candidate >= first_valid_index_col):
+                if (
+                    last_valid_index_col is not None
+                    and first_valid_index_candidate is not None
+                    and (last_valid_index_col >= first_valid_index_candidate or last_valid_index_candidate >= first_valid_index_col)
+                ):
                     continue
 
                 # Check which appears first
@@ -375,8 +406,12 @@ class Processor:
         counts = {}
         # First pass: Get the frequency of colors detected for each player
         for frame, coord in zip(self.frames, self.coords):
-            curr_crops = [item["BBox"] for item in self.coords[coord]["Coordinates"]["Player"].values()]
-            for player_id, item in self.coords[coord]["Coordinates"]["Player"].items():
+            coords_for_frame = self.coords[coord]
+            coordinates_dict = coords_for_frame.get("Coordinates", {})
+            if "Player" not in coordinates_dict or len(coordinates_dict["Player"]) == 0:
+                continue
+            curr_crops = [item["BBox"] for item in coordinates_dict["Player"].values()]
+            for player_id, item in coordinates_dict["Player"].items():
                 player_id = int(player_id)
 
                 bbox = item["BBox"]

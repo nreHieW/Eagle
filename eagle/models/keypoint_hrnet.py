@@ -584,11 +584,12 @@ class KeypointModel(nn.Module):
             coords = []
             for i in range(self.n_heatmaps):
                 heatmap = heatmaps[i].detach().cpu().numpy()  # Shape: (H, W)
+                H, W = heatmap.shape
                 y, x = np.unravel_index(np.argmax(heatmap), heatmap.shape)
-                score = heatmap[y, x]
-                x = x / 240
-                y = y / 135
+                score = float(heatmap[y, x])
+                x_n = x / max(1, W - 1)
+                y_n = y / max(1, H - 1)
                 if score > 0.01:
-                    coords.append((i, x, y, score))
+                    coords.append((i, x_n, y_n, score))
             batch_coords.append(coords)
         return batch_coords

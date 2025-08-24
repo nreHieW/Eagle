@@ -6,13 +6,18 @@ from mplsoccer import Pitch
 import matplotlib.pyplot as plt
 from io import BytesIO
 import sys
+import argparse
 
 sys.path.append("../")
 from eagle.utils.io import write_video
 import json
 
-df = pd.read_json("../output/input_video/raw_data.json").fillna(value=np.nan)
-with open("../output/input_video/metadata.json") as f:
+parser = argparse.ArgumentParser()
+parser.add_argument("--input_dir", type=str, required=True)  # "../output/spurs"
+args = parser.parse_args()
+
+df = pd.read_json(f"{args.input_dir}/raw_data.json").fillna(value=np.nan)
+with open(f"{args.input_dir}/metadata.json") as f:
     metadata = json.load(f)
 fps = metadata["fps"]
 team_mapping = metadata["team_mapping"]
@@ -59,5 +64,5 @@ for i, row in df.iterrows():
     buffer.seek(0)
     img = cv2.imdecode(np.frombuffer(buffer.read(), np.uint8), 1)
     out.append(img)
-
+print("Saving video to output_test.mp4")
 write_video(out, "output_test.mp4", fps=fps)
