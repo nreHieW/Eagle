@@ -17,33 +17,39 @@ Eagle converts football broadcast data from television feeds to tracking data us
 
 Unlike other solutions, Eagle is designed to work **directly on broadcast data** and does not require special scouting feeds or angles. It can read and process clips directly from matches. The GIF above is an example of how Eagle can generalize to all sorts of camera angles. 
 
-For more information on Eagle, refer to the [documentation](docs/algorithm.md).
+For more information, refer to the [documentation](docs/algorithm.md).
 
 ## Example Use Cases 
 Eagle can be used to create a variety of visualisations and metrics. Here are some (non exhaustive) examples beyond creating the Minimap from the GIF above.
 ### Voronoi Diagram 
 Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under `voronoi.py`. The example here is from Manchester City's goal against Nottingham Forest.
 
-<div align="center">
-  <img src="assets/mancity.gif" width="48%" alt="Manchester City vs Nottingham Forest" style="vertical-align: middle;"/>
-  <img src="assets/voronoi.png" width="48%" alt="Voronoi Diagram" style="vertical-align: middle;"/>
-</div>
+<table align="center">
+  <tr>
+    <td align="center" valign="middle"><img src="assets/mancity.gif" width="400" alt="Manchester City vs Nottingham Forest"/></td>
+    <td align="center" valign="middle"><img src="assets/voronoi.png" width="400" alt="Voronoi Diagram"/></td>
+  </tr>
+</table>
 
 ### Pass Plot
 Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under `pass.py`. The example here is Lamine Yamal's assist during the Euros.
 
-<div align="center">
-  <img src="assets/lamine_yamal.gif" width="48%" alt="Lamine Yamal assist during Euros" style="vertical-align: middle;"/>
-  <img src="assets/pass.png" width="48%" alt="Pass Trajectory Plot" style="vertical-align: middle;"/>
-</div>
+<table align="center">
+  <tr>
+    <td align="center" valign="middle"><img src="assets/lamine_yamal.gif" width="400" alt="Lamine Yamal assist during Euros"/></td>
+    <td align="center" valign="middle"><img src="assets/pass.png" width="400" alt="Pass Trajectory Plot"/></td>
+  </tr>
+</table>
 
 ### Player Trajectory
 Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under `trajectory.py`. The example here is Lionel Messi's goal against Athletic Bilbao.
 
-<div align="center">
-  <img src="assets/messi.gif" width="48%" alt="Lionel Messi goal vs Athletic Bilbao" style="vertical-align: middle;"/>
-  <img src="assets/trajectory.png" width="48%" alt="Player Trajectory Visualization" style="vertical-align: middle;"/>
-</div>
+<table align="center">
+  <tr>
+    <td align="center" valign="middle"><img src="assets/messi.gif" width="400" alt="Lionel Messi goal vs Athletic Bilbao"/></td>
+    <td align="center" valign="middle"><img src="assets/trajectory.png" width="400" alt="Player Trajectory Visualization"/></td>
+  </tr>
+</table>
 
 ## Usage 
 ### Colab Usage (Recommended)
@@ -51,7 +57,7 @@ Eagle can be used to visualize the movement of a player over time. This can be u
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
 </a>
 
-It is recommended to use Eagle in the provided Google Colab notebook. It is a self-contained environment that allows you to run Eagle without having to install any dependencies. You can also use the provided [notebook](https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU) to run Eagle on your own data.
+It is recommended to use Eagle in the provided Google Colab notebook. It is a self-contained environment that allows you to run Eagle without having to install any dependencies. You can also use the provided <a href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU" target="_blank">notebook</a> to run Eagle on your own data.
 
 You will need to upload your video and follow the instructions in the notebook. 
 
@@ -85,7 +91,7 @@ uv run main.py --video_path input_video.mp4 # Replace with your video name
 The output data can be found in `output/(input_video)/`. For a detailed description of the output data format refer to [the section below](#output-explanation).
 
 ## Advanced Usage 
-Eagle works best in CUDA enabled GPU environments or at the very least with [Apple Metal](https://developer.apple.com/metal/pytorch/). If you do not have access to such resources, feel free to use the [Google Colab provided](https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU). There are different variants of models provided - both [PyTorch](https://pytorch.org/) and [ONNX](https://onnx.ai/) formats as well as different sizes of the detector model. Feel free to choose the relevant format/sizes for your hardware requirements. Feel free to change the Tracker model used as well.
+Eagle works best in CUDA enabled GPU environments or at the very least with [Apple Metal](https://developer.apple.com/metal/pytorch/). If you do not have access to such resources, feel free to use the <a href="https://colab.research.google.com/drive/1oGiZA0uj9MIarkhg2ty21WC4A0KXuhZX?authuser=3#scrollTo=h1KXqSjicSJU" target="_blank">Google Colab provided</a>. There are different variants of models provided - both [PyTorch](https://pytorch.org/) and [ONNX](https://onnx.ai/) formats as well as different sizes of the detector model. Feel free to choose the relevant format/sizes for your hardware requirements. Feel free to change the Tracker model used as well.
 
 The Homography Calculation and Keypoint detection are pretty computationally expensive operations. If you have the compute requirements, feel free to invoke them more often as it might lead to more accurate results. They are controlled by the `num_homography` and `num_keypoint_detection` parameter which determine the number of times each of the operations are carried out per second respectively. 
 
@@ -119,10 +125,12 @@ Some common debugging strategies:
 - It is also recommended to ensure that your clip is trimmed to the relevant part of the game.
 
 An example of the above is shown below. The ball and player coordinates are generally accurate but the ball detections aren't 100% accurate.
-<div align="center">
-  <img src="assets/spurs.gif" width="48%" alt="Spurs match example" style="vertical-align: middle;"/>
-  <img src="assets/spurs_minimap.gif" width="48%" alt="Generated minimap" style="vertical-align: middle;"/>
-</div>
+<table align="center">
+  <tr>
+    <td align="center" valign="middle"><img src="assets/spurs.gif" width="400" alt="Spurs match example"/></td>
+    <td align="center" valign="middle"><img src="assets/spurs_minimap.gif" width="400" alt="Generated minimap"/></td>
+  </tr>
+</table>
 
 ## Output Explanation 
 Outputs are stored in `output/(your video name)/`. All transformed coordinates use the UEFA pitch specifications (105 x 68). For detailed breakdown of the coordinate system and data output, see [this file](docs/data.md).
