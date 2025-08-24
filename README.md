@@ -20,9 +20,9 @@ Unlike other solutions, Eagle is designed to work **directly on broadcast data**
 For more information, refer to the [documentation](docs/algorithm.md).
 
 ## Example Use Cases 
-Eagle can be used to create a variety of visualisations and metrics. Here are some (non exhaustive) examples beyond creating the Minimap from the GIF above.
+Eagle can be used to create a variety of visualisations and metrics. Here are some (non exhaustive) examples beyond creating the Minimap from the GIF above (example script: <a href="https://github.com/nreHieW/Eagle/blob/main/examples/minimap.py" target="_blank">`minimap.py`</a>).
 ### Voronoi Diagram 
-Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under `voronoi.py`. The example here is from Manchester City's goal against Nottingham Forest.
+Eagle can be used to create Voronoi diagrams of the pitch. This is useful for visualising the movement of players and the areas they occupy on the pitch. An example script is provided in the `examples` folder under <a href="https://github.com/nreHieW/Eagle/blob/main/examples/voronoi.py" target="_blank">`voronoi.py`</a>. The example here is from Manchester City's goal against Nottingham Forest.
 
 <table align="center">
   <tr>
@@ -32,7 +32,7 @@ Eagle can be used to create Voronoi diagrams of the pitch. This is useful for vi
 </table>
 
 ### Pass Plot
-Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under `pass.py`. The example here is Lamine Yamal's assist during the Euros.
+Eagle can be used to create pass trajectories. This can be used to create metrics related to the nature of any single pass. An example script is provided in the `examples` folder under <a href="https://github.com/nreHieW/Eagle/blob/main/examples/pass.py" target="_blank">`pass.py`</a>. The example here is Lamine Yamal's assist during the Euros.
 
 <table align="center">
   <tr>
@@ -42,7 +42,7 @@ Eagle can be used to create pass trajectories. This can be used to create metric
 </table>
 
 ### Player Trajectory
-Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under `trajectory.py`. The example here is Lionel Messi's goal against Athletic Bilbao.
+Eagle can be used to visualize the movement of a player over time. This can be useful for metrics such as distance covered, speed, etc and can also be used to see how players position. An example script is provided in the `examples` folder under <a href="https://github.com/nreHieW/Eagle/blob/main/examples/trajectory.py" target="_blank">`trajectory.py`</a>. The example here is Lionel Messi's goal against Athletic Bilbao.
 
 <table align="center">
   <tr>
